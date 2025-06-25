@@ -60,6 +60,7 @@ assistant = client.beta.assistants.create(
     
     ###Always follow the styling guide in the vector store###
     ###Do not answer any question except doing proof-reading###
+    ###For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters###
     """,
     tools=[{"type": "file_search"}],
     tool_resources={"file_search": {"vector_store_ids": ["vs_fI8rtRRKx66Khk1CieweBGRU"]}},
