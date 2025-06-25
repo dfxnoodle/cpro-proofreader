@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:ns1="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ns1:Ignorable="w14 wp14">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:b />
+        </w:rPr>
+        <w:t>📋 Instructions: </w:t>
+      </w:r>
+      <w:r>
+        <w:t>This document contains 1 corrections with Microsoft Word track changes.</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:b />
+        </w:rPr>
+        <w:t>🔍 To review changes: </w:t>
+      </w:r>
+      <w:r>
+        <w:t>Open in Microsoft Word → Review tab → Accept/Reject changes</w:t>
+      </w:r>
+    </w:p>
+    <w:p />
+    <w:p>
+      <w:r>
+        <w:t>On</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>9:30</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>a.m.,</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:ins w:id="1" w:author="Style Guide Checker" w:date="2025-06-24T17:21:05Z">
+        <w:r>
+          <w:t>12</w:t>
+        </w:r>
+      </w:ins>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>February</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:del w:id="2" w:author="Style Guide Checker" w:date="2025-06-24T17:21:05Z">
+        <w:r>
+          <w:delText>12,</w:delText>
+        </w:r>
+      </w:del>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>2025,</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>I</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>arrived</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>at</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>the</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>CUHK</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>Main</w:t>
+      </w:r>
+      <w:r>
+        <w:t> </w:t>
+      </w:r>
+      <w:r>
+        <w:t>Campus.</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:br w:type="page" />
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Heading1" />
+      </w:pPr>
+      <w:r>
+        <w:t>Summary of Changes</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:b />
+        </w:rPr>
+        <w:t>1. </w:t>
+      </w:r>
+      <w:r>
+        <w:t>Date format corrected</w:t>
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proof Reader - Style Guide Checker</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    
+    <div class="container">
+        <header>
+            <h1>🌸 CPRO Proof Reader 🌸</h1>
+            <p>✨ Check your text with extra care ✨</p>
+        </header>
+
+        <main>
+            <!-- Tab Navigation -->
+            <div class="tab-container">
+                <button class="tab-button active" onclick="showTab('text-tab')">✏️ Text Input</button>
+                <button class="tab-button" onclick="showTab('file-tab')">📄 DOCX Upload</button>
+            </div>
+
+            <!-- Text Input Tab -->
+            <div id="text-tab" class="tab-content active">
+                <div class="input-section">
+                    <h2>💭 Enter your text</h2>
+                    <textarea 
+                        id="inputText" 
+                        placeholder="✨ Enter the text you want to make perfect... ✨"
+                        rows="8"
+                    ></textarea>
+                    <button id="proofreadBtn" onclick="proofreadText()" class="modern-btn">
+                        <div class="btn-content">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span id="btnText">🌟 Proofread</span>
+                        </div>
+                        <div id="spinner" class="modern-spinner hidden">
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Upload Tab -->
+            <div id="file-tab" class="tab-content">
+                <div class="input-section">
+                    <h2>📂 Upload your document</h2>
+                    <div class="file-upload-area" id="fileUploadArea">
+                        <div class="file-upload-content">
+                            <div class="upload-icon">🎀</div>
+                            <p>Drop your DOCX file here or click to browse 💕</p>
+                            <input type="file" id="fileInput" accept=".docx" style="display: none;">
+                            <button type="button" onclick="document.getElementById('fileInput').click()" class="browse-btn">
+                                🌸 Browse Files
+                            </button>
+                        </div>
+                    </div>
+                    <div id="selectedFile" class="selected-file" style="display: none;">
+                        <span id="fileName"></span>
+                        <button onclick="clearFile()" class="clear-file-btn">×</button>
+                    </div>
+                    <button id="proofreadFileBtn" onclick="proofreadFile()" style="display: none;" class="modern-btn">
+                        <div class="btn-content">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span id="fileBtnText">💖 Proofread Document</span>
+                        </div>
+                        <div id="fileSpinner" class="modern-spinner hidden">
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <h2>✨ Magical Results ✨</h2>
+                
+                <div class="result-box">
+                    <h3>📋 Original Text</h3>
+                    <div id="originalText" class="text-content"></div>
+                </div>
+
+                <div class="result-box">
+                    <h3>✅ Proofread Response</h3>
+                    <div id="correctedText" class="text-content"></div>
+                </div>
+
+                <div class="result-box" id="mistakesBox" style="display: none;">
+                    <h3>⚠️ Issues Found</h3>
+                    <ul id="mistakesList"></ul>
+                </div>
+
+                <div class="actions">
+                    <button onclick="clearResults()" class="secondary-btn">🧹 Clear Results</button>
+                    <button onclick="copyToClipboard()" class="copy-btn">📋 Copy Perfection</button>
+                </div>
+            </div>
+
+            <!-- DOCX Results Section -->
+            <div class="results-section" id="docxResultsSection" style="display: none;">
+                <h2>🎉 DOCX Processing Results 🎉</h2>
+                
+                <div class="result-box">
+                    <h3>📄 Document Processed</h3>
+                    <p><strong>Original File:</strong> <span id="originalFilename"></span></p>
+                    <p><strong>Issues Found:</strong> <span id="mistakesCount"></span></p>
+                </div>
+
+                <div class="result-box" id="docxMistakesBox" style="display: none;">
+                    <h3>⚠️ Issues Found</h3>
+                    <ul id="docxMistakesList"></ul>
+                </div>
+
+                <div class="result-box">
+                    <h3>📥 Download Corrected Document</h3>
+                    <p>Your document has been processed with track changes showing all corrections.</p>
+                    <button id="downloadBtn" onclick="downloadCorrectedDocx()" class="download-btn">
+                        🌸 Download DOCX 🌸
+                    </button>
+                </div>
+
+                <div class="actions">
+                    <button onclick="clearDocxResults()" class="secondary-btn">🧹 Clear Results</button>
+                </div>
+            </div>
+
+            <div class="error-section" id="errorSection" style="display: none;">
+                <div class="error-box">
+                    <h3>❌ Error</h3>
+                    <p id="errorMessage"></p>
+                    <button onclick="clearError()" class="secondary-btn">🌸 Close</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by Azure OpenAI Assistant</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
