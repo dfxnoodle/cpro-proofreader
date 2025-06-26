@@ -3,148 +3,220 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CPRO Style Guide Checker | CUHK Communications and Public Relations Office</title>
+    <title>CPRO Writing Style Guide Checker</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    
     <div class="container">
-        <header>
-            <h1>CPRO Style Guide Checker</h1>
-            <p>Professional Document Review and Style Verification</p>
-        </header>
-
-        <main>
-            <!-- Tab Navigation -->
-            <div class="tab-container">
-                <button class="tab-button active" onclick="showTab('text-tab')">Text Input</button>
-                <button class="tab-button" onclick="showTab('file-tab')">Document Upload</button>
+        <div class="main-wrapper">
+            <!-- Left Sidebar -->
+            <div class="sidebar">
+            <div class="header">
+                <div class="logo-section">
+                    <img src="/static/cpro_logo.png" alt="CUHK Logo" class="logo">
+                    <div class="title-section">
+                        <p class="subtitle">Professional Document Review and Style Verification</p>
+                    </div>
+                </div>
             </div>
 
-            <!-- Text Input Tab -->
-            <div id="text-tab" class="tab-content active">
-                <div class="input-section">
-                    <h2>Enter Text for Review</h2>
+            <div class="input-section">
+                <h2>INPUT</h2>
+                
+                <!-- Input Tabs -->
+                <div class="input-tabs">
+                    <button class="input-tab active" onclick="showInputTab('text')">
+                        <span class="tab-icon">📝</span>
+                        Text Input
+                    </button>
+                    <button class="input-tab" onclick="showInputTab('document')">
+                        <span class="tab-icon">📄</span>
+                        Document Upload
+                    </button>
+                </div>
+
+                <!-- Text Input Panel -->
+                <div id="text-input-panel" class="input-panel active">
                     <textarea 
                         id="inputText" 
-                        placeholder="Enter the text you would like to check for style guide compliance..."
-                        rows="8"
+                        placeholder="Type your text here&#10;or&#10;Copy and paste your text from another source."
+                        class="text-input"
                     ></textarea>
-                    <button id="proofreadBtn" onclick="proofreadText()" class="modern-btn">
-                        <div class="btn-content">
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            <span id="btnText">Review Text</span>
-                        </div>
-                        <div id="spinner" class="modern-spinner hidden">
-                            <div class="spinner-ring"></div>
-                            <div class="spinner-ring"></div>
-                            <div class="spinner-ring"></div>
-                        </div>
+                    <button id="proofreadBtn" class="primary-button" onclick="proofreadText()">
+                        <span id="spinner" class="spinner hidden"></span>
+                        <span id="btnText">Proofread Text</span>
                     </button>
                 </div>
-            </div>
 
-            <!-- File Upload Tab -->
-            <div id="file-tab" class="tab-content">
-                <div class="input-section">
-                    <h2>Upload Document for Review</h2>
-                    <div class="file-upload-area" id="fileUploadArea">
-                        <div class="file-upload-content">
-                            <div class="upload-icon">📄</div>
-                            <p>Drop your DOCX file here or click to browse</p>
-                            <input type="file" id="fileInput" accept=".docx" style="display: none;">
-                            <button type="button" onclick="document.getElementById('fileInput').click()" class="browse-btn">
-                                Browse Files
-                            </button>
-                        </div>
+                <!-- Document Upload Panel -->
+                <div id="document-input-panel" class="input-panel">
+                    <div id="fileUploadArea" class="file-upload-area">
+                        <div class="upload-icon">📁</div>
+                        <p>Drag and drop your files here<br><strong>or</strong></p>
+                        <button class="choose-files-btn">Choose your files</button>
+                        <input type="file" id="fileInput" accept=".docx" style="display: none;">
                     </div>
+                    
                     <div id="selectedFile" class="selected-file" style="display: none;">
-                        <span id="fileName"></span>
-                        <button onclick="clearFile()" class="clear-file-btn">×</button>
+                        <div class="file-info">
+                            <span class="file-icon">📄</span>
+                            <span id="fileName" class="file-name"></span>
+                        </div>
+                        <button class="clear-file-btn" onclick="clearFile()">✕</button>
                     </div>
-                    <button id="proofreadFileBtn" onclick="proofreadFile()" style="display: none;" class="modern-btn">
-                        <div class="btn-content">
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                            <span id="fileBtnText">Review Document</span>
-                        </div>
-                        <div id="fileSpinner" class="modern-spinner hidden">
-                            <div class="spinner-ring"></div>
-                            <div class="spinner-ring"></div>
-                            <div class="spinner-ring"></div>
-                        </div>
+
+                    <button id="proofreadFileBtn" class="primary-button" onclick="proofreadFile()" style="display: none;">
+                        <span id="fileSpinner" class="spinner hidden"></span>
+                        <span id="fileBtnText">Proofread Document</span>
                     </button>
+                </div>
+
+                <!-- Style Guide Download -->
+                <div class="style-guide-section">
+                    <h3>STYLE GUIDE DOWNLOAD</h3>
+                    <select class="style-guide-select">
+                        <option>Select Style Guide</option>
+                        <option>CUHK Writing Style Guide</option>
+                        <option>Academic Writing Guide</option>
+                        <option>Business Communication Guide</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Main Header -->
+            <div class="main-header">
+                <div class="main-header-content">
+                    <span class="header-icon">📝</span>
+                    <h1 class="main-title">CPRO WRITING STYLE GUIDE CHECKER</h1>
                 </div>
             </div>
 
-            <div class="results-section" id="resultsSection" style="display: none;">
-                <h2>Review Results</h2>
-                
-                <div class="result-box">
-                    <h3>Original Text</h3>
-                    <div id="originalText" class="text-content"></div>
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section" style="display: none;">
+                <div class="result-header">
+                    <h2>RESULT</h2>
+                    <button class="clear-result-btn" onclick="clearResults()">Clear Result</button>
                 </div>
 
-                <div class="result-box">
-                    <h3>Style Guide Review</h3>
-                    <div id="correctedText" class="text-content"></div>
-                </div>
+                <div class="result-content">
+                    <!-- Original vs Result Comparison -->
+                    <div class="comparison-section">
+                        <div class="text-column">
+                            <div class="column-header">
+                                <h3>Original</h3>
+                                <button class="copy-btn" onclick="copyOriginal()">
+                                    <span class="copy-icon">📋</span>
+                                    Copy
+                                </button>
+                            </div>
+                            <div id="originalText" class="text-content"></div>
+                        </div>
 
-                <div class="result-box" id="mistakesBox" style="display: none;">
-                    <h3>Issues Identified</h3>
-                    <ul id="mistakesList"></ul>
-                </div>
+                        <div class="text-column">
+                            <div class="column-header">
+                                <h3>Result</h3>
+                                <div class="column-actions">
+                                    <button class="copy-btn" onclick="copyResult()">
+                                        <span class="copy-icon">📋</span>
+                                        Copy
+                                    </button>
+                                    <button class="export-btn" onclick="exportToWord()">
+                                        <span class="export-icon">📥</span>
+                                        Export to Word
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="correctedText" class="text-content"></div>
+                        </div>
+                    </div>
 
-                <div class="actions">
-                    <button onclick="clearResults()" class="secondary-btn">Clear Results</button>
-                    <button onclick="copyToClipboard()" class="copy-btn">Copy Text</button>
+                    <!-- Issues Identified Section -->
+                    <div id="mistakesBox" class="issues-section">
+                        <h3>Issues Identified</h3>
+                        <ol id="mistakesList" class="issues-list"></ol>
+                    </div>
                 </div>
             </div>
 
             <!-- DOCX Results Section -->
-            <div class="results-section" id="docxResultsSection" style="display: none;">
-                <h2>Document Processing Results</h2>
-                
-                <div class="result-box">
-                    <h3>📄 Document Processed</h3>
-                    <p><strong>Original File:</strong> <span id="originalFilename"></span></p>
-                    <p><strong>Issues Found:</strong> <span id="mistakesCount"></span></p>
+            <div id="docxResultsSection" class="results-section" style="display: none;">
+                <div class="result-header">
+                    <h2>DOCUMENT ANALYSIS COMPLETE</h2>
+                    <button class="clear-result-btn" onclick="clearDocxResults()">Clear Result</button>
                 </div>
 
-                <div class="result-box" id="docxMistakesBox" style="display: none;">
-                    <h3>Issues Identified</h3>
-                    <ul id="docxMistakesList"></ul>
-                </div>
+                <div class="docx-result-content">
+                    <div class="docx-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Original File:</span>
+                            <span id="originalFilename" class="summary-value"></span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Issues Found:</span>
+                            <span id="mistakesCount" class="summary-value mistakes-count">0</span>
+                        </div>
+                    </div>
 
-                <div class="result-box">
-                    <h3>Download Reviewed Document</h3>
-                    <p>Your document has been processed with track changes showing all corrections.</p>
-                    <button id="downloadBtn" onclick="downloadCorrectedDocx()" class="download-btn">
-                        Download Document
-                    </button>
-                </div>
+                    <div id="docxMistakesBox" class="issues-section">
+                        <h3>Issues Identified</h3>
+                        <ol id="docxMistakesList" class="issues-list"></ol>
+                    </div>
 
-                <div class="actions">
-                    <button onclick="clearDocxResults()" class="secondary-btn">Clear Results</button>
+                    <div class="download-section">
+                        <button class="download-btn" onclick="downloadCorrectedDocx()">
+                            <span class="download-icon">📥</span>
+                            Download Corrected Document
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div class="error-section" id="errorSection" style="display: none;">
-                <div class="error-box">
+            <!-- Initial Welcome State -->
+            <div id="initial-state" class="welcome-state">
+                <div class="welcome-content">
+                    <div class="welcome-icon">✨</div>
+                    <h2>Welcome to CPRO Writing Style Guide Checker</h2>
+                    <p>Upload your document or paste your text to get started with professional proofreading and style verification.</p>
+                    <div class="feature-list">
+                        <div class="feature-item">
+                            <span class="feature-icon">🔍</span>
+                            <span>Comprehensive grammar and style checking</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">📝</span>
+                            <span>CUHK writing style compliance</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">📄</span>
+                            <span>Track changes in Word documents</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="error-section" style="display: none;">
+                <div class="error-content">
+                    <div class="error-icon">⚠️</div>
                     <h3>Error</h3>
-                    <p id="errorMessage"></p>
-                    <button onclick="clearError()" class="secondary-btn">Close</button>
+                    <p id="errorMessage" class="error-message"></p>
+                    <button class="clear-error-btn" onclick="clearError()">Dismiss</button>
                 </div>
             </div>
-        </main>
 
-        <footer>
-            <p>Communications and Public Relations Office | The Chinese University of Hong Kong</p>
-        </footer>
+            <!-- Footer text positioned in bottom right -->
+            <div class="footer-text">
+                <p>Communications and Public Relations Office | The Chinese University of Hong Kong</p>
+            </div>
+        </div>
     </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <script src="/static/script.js"></script>
 </body>

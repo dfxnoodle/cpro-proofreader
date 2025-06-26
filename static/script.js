@@ -1,8 +1,8 @@
 // API base URL
-const API_BASE_URL = window.location.origin;
+const API_BASE_URL = window.location.origin || 'http://localhost:8005';
 
 // DOM elements
-const inputText = document.getElementById('inputText');
+let inputText = document.getElementById('inputText');
 const proofreadBtn = document.getElementById('proofreadBtn');
 const btnText = document.getElementById('btnText');
 const spinner = document.getElementById('spinner');
@@ -73,30 +73,30 @@ function setLoadingState(loading) {
 
 // Display results
 function displayResults(data) {
-    originalText.textContent = data.original_text;
-    correctedText.textContent = data.corrected_text;
+    // Hide initial state and show results
+    document.getElementById('initial-state').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
     
-    // Clear previous mistakes
-    mistakesList.innerHTML = '';
+    // Populate content
+    document.getElementById('originalText').textContent = data.original_text;
+    document.getElementById('correctedText').textContent = data.corrected_text;
     
-    // Display mistakes if any
+    // Handle mistakes
     if (data.mistakes && data.mistakes.length > 0) {
+        const mistakesBox = document.getElementById('mistakesBox');
+        const mistakesList = document.getElementById('mistakesList');
+        
+        mistakesList.innerHTML = '';
         data.mistakes.forEach(mistake => {
-            if (mistake.trim()) {
-                const li = document.createElement('li');
-                li.textContent = mistake;
-                mistakesList.appendChild(li);
-            }
+            const li = document.createElement('li');
+            li.textContent = mistake;
+            mistakesList.appendChild(li);
         });
+        
         mistakesBox.style.display = 'block';
     } else {
-        mistakesBox.style.display = 'none';
+        document.getElementById('mistakesBox').style.display = 'none';
     }
-    
-    resultsSection.style.display = 'block';
-    
-    // Scroll to results
-    resultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 
 // Show error
@@ -118,9 +118,11 @@ function hideError() {
 
 // Clear results
 function clearResults() {
-    hideResults();
-    inputText.value = '';
-    inputText.focus();
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('docxResultsSection').style.display = 'none';
+    document.getElementById('initial-state').style.display = 'flex';
+    document.getElementById('inputText').value = '';
+    clearFile();
 }
 
 // Clear error
@@ -168,7 +170,16 @@ function showToast(message, type = 'success') {
     toast.className = `toast ${type}`;
     toast.textContent = message;
     
-    document.body.appendChild(toast);
+    // Get or create toast container
+    let toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'toast-container';
+        document.body.appendChild(toastContainer);
+    }
+    
+    toastContainer.appendChild(toast);
     
     // Trigger animation
     setTimeout(() => {
@@ -187,41 +198,117 @@ function showToast(message, type = 'success') {
 }
 
 // Handle Enter key in textarea (Ctrl+Enter to submit)
-inputText.addEventListener('keydown', function(event) {
-    if (event.ctrlKey && event.key === 'Enter') {
-        event.preventDefault();
-        proofreadText();
-    }
-});
-
-// Auto-resize textarea
-inputText.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = Math.max(150, this.scrollHeight) + 'px';
-});
-
-// Tab switching functionality
-function showTab(tabId) {
-    // Hide all tab contents
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
+if (inputText) {
+    inputText.addEventListener('keydown', function(event) {
+        if (event.ctrlKey && event.key === 'Enter') {
+            event.preventDefault();
+            proofreadText();
+        }
     });
-    
-    // Remove active class from all tab buttons
-    document.querySelectorAll('.tab-button').forEach(button => {
-        button.classList.remove('active');
+
+    // Auto-resize textarea
+    inputText.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.max(150, this.scrollHeight) + 'px';
     });
+}
+
+// Tab switching functions for new UI
+function showInputTab(tabName) {
+    // Remove active class from all input tabs and panels
+    document.querySelectorAll('.input-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.input-panel').forEach(panel => panel.classList.remove('active'));
     
-    // Show selected tab content
-    document.getElementById(tabId).classList.add('active');
-    
-    // Add active class to clicked button
+    // Add active class to selected tab and panel
     event.target.classList.add('active');
+    document.getElementById(tabName + '-input-panel').classList.add('active');
     
-    // Clear results when switching tabs
+    // Clear any existing results and errors
     hideResults();
     hideDocxResults();
     hideError();
+    
+    // Show initial state when switching tabs
+    document.getElementById('initial-state').style.display = 'flex';
+}
+
+// Copy functions for new UI
+function copyOriginal() {
+    const originalText = document.getElementById('originalText').textContent;
+    navigator.clipboard.writeText(originalText).then(() => {
+        showToast('Original text copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy text', 'error');
+    });
+}
+
+function copyResult() {
+    const correctedText = document.getElementById('correctedText').textContent;
+    navigator.clipboard.writeText(correctedText).then(() => {
+        showToast('Corrected text copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy text', 'error');
+    });
+}
+
+async function exportToWord() {
+    // Get the texts
+    const correctedText = document.getElementById('correctedText').textContent;
+    const originalTextContent = document.getElementById('originalText').textContent;
+    
+    if (!correctedText) {
+        showToast('No corrected text to export', 'error');
+        return;
+    }
+    
+    // Show loading toast
+    showToast('Creating Word document...', 'info');
+    
+    try {
+        // Get the mistakes from the current results
+        const mistakesList = document.getElementById('mistakesList');
+        const mistakes = [];
+        if (mistakesList) {
+            const mistakeItems = mistakesList.querySelectorAll('li');
+            mistakeItems.forEach(item => {
+                mistakes.push(item.textContent);
+            });
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/export-to-word`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                original_text: originalTextContent,
+                corrected_text: correctedText,
+                mistakes: mistakes
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to create Word document');
+        }
+        
+        const data = await response.json();
+        
+        // Download the file
+        const downloadUrl = `${API_BASE_URL}${data.download_url}`;
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = data.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showToast('Word document downloaded successfully!', 'success');
+        
+    } catch (error) {
+        console.error('Error exporting to Word:', error);
+        showToast('Failed to create Word document: ' + error.message, 'error');
+    }
 }
 
 // File upload functionality
@@ -231,35 +318,48 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectedFileDiv = document.getElementById('selectedFile');
     const fileName = document.getElementById('fileName');
     const proofreadFileBtn = document.getElementById('proofreadFileBtn');
+    const chooseFilesBtn = document.querySelector('.choose-files-btn');
     
     // File input change handler
-    fileInput.addEventListener('change', function(e) {
-        handleFileSelection(e.target.files[0]);
-    });
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            handleFileSelection(e.target.files[0]);
+        });
+    }
+    
+    // Choose files button click handler
+    if (chooseFilesBtn) {
+        chooseFilesBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            fileInput.click();
+        });
+    }
     
     // Drag and drop functionality
-    fileUploadArea.addEventListener('click', function() {
-        fileInput.click();
-    });
-    
-    fileUploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        fileUploadArea.classList.add('dragover');
-    });
-    
-    fileUploadArea.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        fileUploadArea.classList.remove('dragover');
-    });
-    
-    fileUploadArea.addEventListener('drop', function(e) {
-        e.preventDefault();
-        fileUploadArea.classList.remove('dragover');
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileSelection(files[0]);
-        }
-    });
+    if (fileUploadArea) {
+        fileUploadArea.addEventListener('click', function() {
+            fileInput.click();
+        });
+        
+        fileUploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+        
+        fileUploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+        });
+        
+        fileUploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelection(files[0]);
+            }
+        });
+    }
 });
 
 function handleFileSelection(file) {
@@ -344,6 +444,9 @@ function setFileLoadingState(loading) {
 
 // Display DOCX results
 function displayDocxResults(data) {
+    // Hide initial state and show DOCX results
+    document.getElementById('initial-state').style.display = 'none';
+    
     document.getElementById('originalFilename').textContent = data.original_filename;
     document.getElementById('mistakesCount').textContent = data.mistakes_count;
     
@@ -416,17 +519,18 @@ function clearDocxResults() {
     hideDocxResults();
     clearFile();
     currentDownloadFilename = null;
+    document.getElementById('initial-state').style.display = 'flex';
 }
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    inputText.focus();
+    // Re-get inputText in case DOM wasn't ready
+    if (!inputText) {
+        inputText = document.getElementById('inputText');
+    }
     
-    // Add keyboard shortcut hint
-    const hint = document.createElement('div');
-    hint.style.fontSize = '0.8rem';
-    hint.style.color = '#666';
-    hint.style.marginTop = '0.5rem';
-    hint.textContent = 'Tip: Press Ctrl+Enter to proofread quickly';
-    inputText.parentNode.appendChild(hint);
+    // Focus on input text if it exists
+    if (inputText) {
+        inputText.focus();
+    }
 });

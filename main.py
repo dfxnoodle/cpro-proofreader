@@ -77,6 +77,11 @@ class ProofReadResponse(BaseModel):
     mistakes: list
     status: str
 
+class ExportToWordRequest(BaseModel):
+    original_text: str
+    corrected_text: str
+    mistakes: list
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve the main HTML page"""
@@ -222,6 +227,39 @@ async def proofread_text(request: ProofReadRequest):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "proof-reader"}
+
+@app.post("/export-to-word")
+async def export_to_word(request: ExportToWordRequest):
+    """
+    Export corrected text to a Word document with track changes
+    """
+    try:
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"corrected_document_{timestamp}.docx"
+        
+        # Create DOCX with track changes
+        docx_buffer = create_tracked_changes_docx(
+            request.original_text, 
+            request.corrected_text, 
+            request.mistakes
+        )
+        
+        # Save to temp directory
+        temp_dir = tempfile.gettempdir()
+        file_path = os.path.join(temp_dir, filename)
+        
+        with open(file_path, 'wb') as f:
+            f.write(docx_buffer.getvalue())
+        
+        return {
+            "filename": filename,
+            "download_url": f"/download-docx/{filename}",
+            "message": "Word document created successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Word document: {str(e)}")
 
 def extract_text_from_docx(file_content: bytes) -> str:
     """Extract text from DOCX file with proper spacing preservation"""
