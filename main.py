@@ -37,6 +37,7 @@ app.add_middleware(
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/styling_guides", StaticFiles(directory="styling_guides"), name="styling_guides")
 
 # Initialize Azure OpenAI client
 client = AzureOpenAI(
@@ -442,6 +443,33 @@ async def proofread_docx(file: UploadFile = File(...)):
                 detail=f"Assistant run failed with status: {run.status}"
             )
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/style-guides")
+async def get_style_guides():
+    """
+    Get list of available style guide files
+    """
+    try:
+        style_guides_dir = "styling_guides"
+        if not os.path.exists(style_guides_dir):
+            return {"files": []}
+        
+        files = []
+        for filename in os.listdir(style_guides_dir):
+            if filename.endswith(('.pdf', '.doc', '.docx')):
+                # Clean up the display name
+                display_name = filename.replace('.pdf', '').replace('.doc', '').replace('.docx', '')
+                display_name = display_name.replace('%20', ' ')  # Handle URL encoding
+                
+                files.append({
+                    "filename": filename,
+                    "display_name": display_name,
+                    "download_url": f"/styling_guides/{filename}"
+                })
+        
+        return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

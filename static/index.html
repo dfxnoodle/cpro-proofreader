@@ -17,6 +17,7 @@
                     <img src="/static/cpro_logo.png" alt="CUHK Logo" class="logo">
                     <div class="title-section">
                         <p class="subtitle">Professional Document Review and Style Verification</p>
+                        <div class="subtitle-separator"></div>
                     </div>
                 </div>
             </div>
@@ -40,13 +41,15 @@
                 <div id="text-input-panel" class="input-panel active">
                     <textarea 
                         id="inputText" 
-                        placeholder="Type your text here&#10;or&#10;Copy and paste your text from another source."
+                        placeholder="Enter the text your would like to check for style guide compliance..."
                         class="text-input"
                     ></textarea>
                     <button id="proofreadBtn" class="primary-button" onclick="proofreadText()">
+                        <span class="tab-icon">📄</span>
                         <span id="spinner" class="spinner hidden"></span>
                         <span id="btnText">Proofread Text</span>
                     </button>
+                    <p class="tip-text">Tip: Press Ctrl+Enter to proofread quickly</p>
                 </div>
 
                 <!-- Document Upload Panel -->
@@ -75,12 +78,9 @@
                 <!-- Style Guide Download -->
                 <div class="style-guide-section">
                     <h3>STYLE GUIDE DOWNLOAD</h3>
-                    <select class="style-guide-select">
-                        <option>Select Style Guide</option>
-                        <option>CUHK Writing Style Guide</option>
-                        <option>Academic Writing Guide</option>
-                        <option>Business Communication Guide</option>
-                    </select>
+                    <div class="style-guide-files">
+                        <!-- Style guides will be loaded dynamically -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -90,7 +90,7 @@
             <!-- Main Header -->
             <div class="main-header">
                 <div class="main-header-content">
-                    <span class="header-icon">📝</span>
+                    <span class="header-icon">Aa</span>
                     <h1 class="main-title">CPRO WRITING STYLE GUIDE CHECKER</h1>
                 </div>
             </div>
@@ -99,7 +99,6 @@
             <div id="resultsSection" class="results-section" style="display: none;">
                 <div class="result-header">
                     <h2>RESULT</h2>
-                    <button class="clear-result-btn" onclick="clearResults()">Clear Result</button>
                 </div>
 
                 <div class="result-content">
@@ -139,6 +138,7 @@
                         <h3>Issues Identified</h3>
                         <ol id="mistakesList" class="issues-list"></ol>
                     </div>
+                    <button class="clear-result-btn" onclick="clearResults()">Clear Result</button>
                 </div>
             </div>
 
@@ -146,7 +146,6 @@
             <div id="docxResultsSection" class="results-section" style="display: none;">
                 <div class="result-header">
                     <h2>DOCUMENT ANALYSIS COMPLETE</h2>
-                    <button class="clear-result-btn" onclick="clearDocxResults()">Clear Result</button>
                 </div>
 
                 <div class="docx-result-content">
@@ -171,6 +170,7 @@
                             <span class="download-icon">📥</span>
                             Download Corrected Document
                         </button>
+                        <button class="clear-result-btn" onclick="clearDocxResults()">Clear Result</button>
                     </div>
                 </div>
             </div>
@@ -198,25 +198,45 @@
                 </div>
             </div>
 
-            <!-- Error Section -->
-            <div id="errorSection" class="error-section" style="display: none;">
-                <div class="error-content">
-                    <div class="error-icon">⚠️</div>
-                    <h3>Error</h3>
-                    <p id="errorMessage" class="error-message"></p>
-                    <button class="clear-error-btn" onclick="clearError()">Dismiss</button>
+            <!-- Loading State -->
+            <div id="loading-state" class="loading-state" style="display: none;">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <h2 id="loadingTitle">Processing your text...</h2>
+                    <p id="loadingMessage">Please wait while we analyze your content for style and grammar compliance.</p>
+                    <div class="loading-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Footer text positioned in bottom right -->
+            <!-- Error Section -->
+            <div id="errorSection" class="error-modal" style="display: none;">
+                <div class="error-overlay" onclick="clearError()"></div>
+                <div class="error-content">
+                    <div class="error-header">
+                        <div class="error-icon">⚠️</div>
+                        <h3>An Error Occurred</h3>
+                        <button class="error-close-btn" onclick="clearError()">×</button>
+                    </div>
+                    <div class="error-body">
+                        <p id="errorMessage" class="error-message"></p>
+                    </div>
+                    <div class="error-footer">
+                        <button class="clear-error-btn" onclick="clearError()">Try Again</button>
+                    </div>
+                </div>
+            </div>
+            
             <div class="footer-text">
                 <p>Communications and Public Relations Office | The Chinese University of Hong Kong</p>
             </div>
         </div>
     </div>
 
-    <!-- Toast Notifications -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div class="toast-container"></div>
 
     <script src="/static/script.js"></script>
 </body>

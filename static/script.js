@@ -29,6 +29,7 @@ async function proofreadText() {
     
     // Show loading state
     setLoadingState(true);
+    showLoadingState('Processing your text...', 'Please wait while we analyze your content for style and grammar compliance.');
     hideResults();
     hideError();
     
@@ -47,10 +48,12 @@ async function proofreadText() {
         }
         
         const data = await response.json();
+        hideLoadingState();
         displayResults(data);
         
     } catch (error) {
         console.error('Error:', error);
+        hideLoadingState();
         showError(error.message);
     } finally {
         setLoadingState(false);
@@ -71,6 +74,54 @@ function setLoadingState(loading) {
     }
 }
 
+// Helper function to parse mistake text and extract sources
+function parseMistakeText(mistakeText) {
+    // Remove leading numbers (e.g., "1. ", "2. ", etc.)
+    let cleanText = mistakeText.replace(/^\d+\.\s*/, '');
+    
+    // Extract source references using regex for patterns like 【4:1†source】
+    const sourceRegex = /【[^】]+】/g;
+    const sources = cleanText.match(sourceRegex) || [];
+    
+    // Remove source references from the main text
+    cleanText = cleanText.replace(sourceRegex, '').trim();
+    
+    return {
+        text: cleanText,
+        sources: sources
+    };
+}
+
+// Create issue list item with sources
+function createIssueListItem(mistakeText) {
+    const parsed = parseMistakeText(mistakeText);
+    const li = document.createElement('li');
+    
+    // Create the main text element
+    const textDiv = document.createElement('div');
+    textDiv.className = 'issue-text';
+    textDiv.textContent = parsed.text;
+    
+    // Create sources container
+    const sourcesDiv = document.createElement('div');
+    sourcesDiv.className = 'issue-sources';
+    
+    // Add source chips
+    parsed.sources.forEach(source => {
+        const sourceBtn = document.createElement('button');
+        sourceBtn.className = 'issue-source-btn';
+        sourceBtn.textContent = source;
+        sourcesDiv.appendChild(sourceBtn);
+    });
+    
+    li.appendChild(textDiv);
+    if (parsed.sources.length > 0) {
+        li.appendChild(sourcesDiv);
+    }
+    
+    return li;
+}
+
 // Display results
 function displayResults(data) {
     // Hide initial state and show results
@@ -88,8 +139,7 @@ function displayResults(data) {
         
         mistakesList.innerHTML = '';
         data.mistakes.forEach(mistake => {
-            const li = document.createElement('li');
-            li.textContent = mistake;
+            const li = createIssueListItem(mistake);
             mistakesList.appendChild(li);
         });
         
@@ -102,8 +152,7 @@ function displayResults(data) {
 // Show error
 function showError(message) {
     errorMessage.textContent = message;
-    errorSection.style.display = 'block';
-    errorSection.scrollIntoView({ behavior: 'smooth' });
+    errorSection.style.display = 'flex';
 }
 
 // Hide results
@@ -116,10 +165,26 @@ function hideError() {
     errorSection.style.display = 'none';
 }
 
+// Show loading state
+function showLoadingState(title = 'Processing...', message = 'Please wait while we process your request.') {
+    document.getElementById('initial-state').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('docxResultsSection').style.display = 'none';
+    document.getElementById('loadingTitle').textContent = title;
+    document.getElementById('loadingMessage').textContent = message;
+    document.getElementById('loading-state').style.display = 'flex';
+}
+
+// Hide loading state
+function hideLoadingState() {
+    document.getElementById('loading-state').style.display = 'none';
+}
+
 // Clear results
 function clearResults() {
     document.getElementById('resultsSection').style.display = 'none';
     document.getElementById('docxResultsSection').style.display = 'none';
+    document.getElementById('loading-state').style.display = 'none';
     document.getElementById('initial-state').style.display = 'flex';
     document.getElementById('inputText').value = '';
     clearFile();
@@ -227,6 +292,7 @@ function showInputTab(tabName) {
     hideResults();
     hideDocxResults();
     hideError();
+    hideLoadingState();
     
     // Show initial state when switching tabs
     document.getElementById('initial-state').style.display = 'flex';
@@ -311,6 +377,50 @@ async function exportToWord() {
     }
 }
 
+// Load style guides dynamically
+async function loadStyleGuides() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/style-guides`);
+        if (!response.ok) {
+            console.error('Failed to load style guides');
+            return;
+        }
+        
+        const data = await response.json();
+        const styleGuideFiles = document.querySelector('.style-guide-files');
+        
+        if (!styleGuideFiles) {
+            console.error('Style guide files container not found');
+            return;
+        }
+        
+        // Clear existing content
+        styleGuideFiles.innerHTML = '';
+        
+        if (data.files && data.files.length > 0) {
+            data.files.forEach(file => {
+                const fileItem = document.createElement('a');
+                fileItem.href = file.download_url;
+                fileItem.className = 'style-guide-item';
+                fileItem.download = true;
+                
+                fileItem.innerHTML = `
+                    <span class="file-icon">📄</span>
+                    <span class="file-name">${file.display_name}</span>
+                    <span class="download-icon">⬇️</span>
+                    <br>
+                `;
+                
+                styleGuideFiles.appendChild(fileItem);
+            });
+        } else {
+            styleGuideFiles.innerHTML = '<p class="no-files">No style guides available</p>';
+        }
+    } catch (error) {
+        console.error('Error loading style guides:', error);
+    }
+}
+
 // File upload functionality
 document.addEventListener('DOMContentLoaded', function() {
     const fileInput = document.getElementById('fileInput');
@@ -387,6 +497,7 @@ function clearFile() {
 }
 
 // Proofread DOCX file function
+// Proofread DOCX file function
 async function proofreadFile() {
     if (!selectedFile) {
         showToast('Please select a DOCX file first', 'error');
@@ -395,6 +506,7 @@ async function proofreadFile() {
     
     // Show loading state
     setFileLoadingState(true);
+    showLoadingState('Processing your document...', 'Please wait while we analyze your DOCX file for style and grammar compliance.');
     hideResults();
     hideDocxResults();
     hideError();
@@ -414,10 +526,12 @@ async function proofreadFile() {
         }
         
         const data = await response.json();
+        hideLoadingState();
         displayDocxResults(data);
         
     } catch (error) {
         console.error('Error:', error);
+        hideLoadingState();
         showError(error.message);
     } finally {
         setFileLoadingState(false);
@@ -461,8 +575,7 @@ function displayDocxResults(data) {
     if (data.mistakes && data.mistakes.length > 0) {
         data.mistakes.forEach(mistake => {
             if (mistake.trim()) {
-                const li = document.createElement('li');
-                li.textContent = mistake;
+                const li = createIssueListItem(mistake);
                 docxMistakesList.appendChild(li);
             }
         });
@@ -533,4 +646,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (inputText) {
         inputText.focus();
     }
+    
+    // Load style guides on initial load
+    loadStyleGuides();
 });
