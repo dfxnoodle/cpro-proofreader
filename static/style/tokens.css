@@ -1,17 +1,24 @@
 :root {
-  /* CUHK brand */
-  --cuhk-purple: #5f2d83;
+  /* Color palette from design */
+  --primary-purple: #764393;
+  --secondary-beige: #D1BE95;
+  --accent-gold: #A79269;
+  --heading-brown: #887351;
+  --text-gray: #695537;
+
+  /* Legacy CUHK brand (kept for compatibility) */
+  --cuhk-purple: #764393;
   --cuhk-purple-dark: #4a2470;
-  --cuhk-gold:   #c8b07e;
+  --cuhk-gold: #d1be95;
 
   /* neutrals */
-  --bg-light:    #f8f8f9;
-  --text-main:   #222;
+  --bg-light: #f8f8f9;
+  --text-main: #222;
   --text-subtle: #666;
 
   /* component */
   --card-radius: 8px;
   --shadow: 0 2px 5px rgba(0,0,0,.08);
 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: Basel Grotesk, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }

@@ -25,7 +25,7 @@ class WordRevisionGenerator:
         self.author = "Proofreader"
         self.date = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    def create_document_with_revisions(self, original_text: str, corrected_text: str, mistakes: List[str]) -> BytesIO:
+    def create_document_with_revisions(self, original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
         """
         Create a DOCX document with track changes showing the differences between original and corrected text.
         
@@ -33,6 +33,7 @@ class WordRevisionGenerator:
             original_text: The original text
             corrected_text: The corrected text
             mistakes: List of mistake descriptions
+            citations: List of citation information
             
         Returns:
             BytesIO: The generated DOCX file as bytes
@@ -73,6 +74,23 @@ class WordRevisionGenerator:
             for mistake in mistakes:
                 # Use regular paragraph without numbered style to avoid duplication
                 mistake_para = doc.add_paragraph(f"• {mistake}")
+        
+        # Add citations section
+        if citations:
+            # Add separator if we haven't added one yet
+            if not mistakes:
+                doc.add_paragraph("─" * 50)
+            
+            citations_para = doc.add_paragraph()
+            citations_para.add_run("Citations and References:").bold = True
+            for i, citation in enumerate(citations, 1):
+                citation_para = doc.add_paragraph(f"{i}. {citation.get('text', '')}")
+                if citation.get('quote'):
+                    quote_para = doc.add_paragraph(f"   Quote: \"{citation['quote']}\"")
+                    quote_para.italic = True
+                if citation.get('file_name'):
+                    source_para = doc.add_paragraph(f"   Source: {citation['file_name']}")
+                    source_para.italic = True
         
         # Save to BytesIO
         doc_bytes = BytesIO()
@@ -303,7 +321,7 @@ class WordRevisionGenerator:
         return None
 
 
-def create_word_track_changes_docx(original_text: str, corrected_text: str, mistakes: List[str]) -> BytesIO:
+def create_word_track_changes_docx(original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
     """
     Create a Word document with track changes showing differences between original and corrected text.
     This is the main function called by the FastAPI application.
@@ -312,24 +330,25 @@ def create_word_track_changes_docx(original_text: str, corrected_text: str, mist
         original_text: The original text
         corrected_text: The corrected text  
         mistakes: List of mistake descriptions
+        citations: List of citation information
         
     Returns:
         BytesIO: The generated DOCX file as bytes
     """
     generator = WordRevisionGenerator()
-    return generator.create_document_with_revisions(original_text, corrected_text, mistakes)
+    return generator.create_document_with_revisions(original_text, corrected_text, mistakes, citations)
 
 
 # Alternative implementation with more sophisticated tracking
 class AdvancedWordRevisionGenerator(WordRevisionGenerator):
     """Advanced version with better character-level tracking for complex cases."""
     
-    def create_document_with_revisions(self, original_text: str, corrected_text: str, mistakes: List[str]) -> BytesIO:
+    def create_document_with_revisions(self, original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
         """
         Create a DOCX document with advanced track changes and better spacing handling.
         """
         # Use the parent method but with enhanced diff generation
-        return super().create_document_with_revisions(original_text, corrected_text, mistakes)
+        return super().create_document_with_revisions(original_text, corrected_text, mistakes, citations)
     
     def _generate_word_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
         """
@@ -395,9 +414,9 @@ class AdvancedWordRevisionGenerator(WordRevisionGenerator):
 
 
 # For testing with the advanced generator
-def create_word_track_changes_docx_advanced(original_text: str, corrected_text: str, mistakes: List[str]) -> BytesIO:
+def create_word_track_changes_docx_advanced(original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
     """
     Create a Word document using the advanced revision generator.
     """
     generator = AdvancedWordRevisionGenerator()
-    return generator.create_document_with_revisions(original_text, corrected_text, mistakes)
+    return generator.create_document_with_revisions(original_text, corrected_text, mistakes, citations)

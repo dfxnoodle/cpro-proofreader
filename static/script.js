@@ -17,6 +17,7 @@ const errorMessage = document.getElementById('errorMessage');
 // Global variables for file handling
 let selectedFile = null;
 let currentDownloadFilename = null;
+let currentCitations = [];
 
 // Proofread text function
 async function proofreadText() {
@@ -49,6 +50,7 @@ async function proofreadText() {
         
         const data = await response.json();
         hideLoadingState();
+        currentCitations = data.citations || [];
         displayResults(data);
         
     } catch (error) {
@@ -79,8 +81,8 @@ function parseMistakeText(mistakeText) {
     // Remove leading numbers (e.g., "1. ", "2. ", etc.)
     let cleanText = mistakeText.replace(/^\d+\.\s*/, '');
     
-    // Extract source references using regex for patterns like 【4:1†source】
-    const sourceRegex = /【[^】]+】/g;
+    // Extract source references using regex for patterns like 【4:1†source】 or [0], [1], etc.
+    const sourceRegex = /【[^】]+】|\[\d+\]/g;
     const sources = cleanText.match(sourceRegex) || [];
     
     // Remove source references from the main text
@@ -90,6 +92,70 @@ function parseMistakeText(mistakeText) {
         text: cleanText,
         sources: sources
     };
+}
+
+// Function to find citation by reference text or index
+function findCitationByReference(referenceText) {
+    // Handle both old format 【...】 and new format [0], [1], etc.
+    if (referenceText.match(/\[\d+\]/)) {
+        // Extract index from [0], [1], etc.
+        const index = parseInt(referenceText.replace(/[\[\]]/g, ''));
+        return currentCitations.find(citation => citation.index === index);
+    } else {
+        // Handle old format 【...】
+        return currentCitations.find(citation => citation.text === referenceText);
+    }
+}
+
+// Function to show citation popup
+function showCitationPopup(citation) {
+    // Remove existing popup if any
+    const existingPopup = document.querySelector('.citation-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+    
+    // Create popup
+    const popup = document.createElement('div');
+    popup.className = 'citation-popup';
+    popup.innerHTML = `
+        <div class="citation-popup-content">
+            <div class="citation-popup-header">
+                <h4>Citation</h4>
+                <button class="citation-close-btn" onclick="closeCitationPopup()">×</button>
+            </div>
+            <div class="citation-popup-body">
+                <p><strong>Reference:</strong> ${citation.text}</p>
+                ${citation.file_name ? `<p><strong>Source:</strong> ${citation.file_name}</p>` : ''}
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // Add click outside to close
+    popup.addEventListener('click', (e) => {
+        if (e.target === popup) {
+            closeCitationPopup();
+        }
+    });
+    
+    // Add keyboard support
+    const handleKeyPress = (e) => {
+        if (e.key === 'Escape') {
+            closeCitationPopup();
+            document.removeEventListener('keydown', handleKeyPress);
+        }
+    };
+    document.addEventListener('keydown', handleKeyPress);
+}
+
+// Function to close citation popup
+function closeCitationPopup() {
+    const popup = document.querySelector('.citation-popup');
+    if (popup) {
+        popup.remove();
+    }
 }
 
 // Create issue list item with sources
@@ -111,6 +177,20 @@ function createIssueListItem(mistakeText) {
         const sourceBtn = document.createElement('button');
         sourceBtn.className = 'issue-source-btn';
         sourceBtn.textContent = source;
+        
+        // Find corresponding citation and add click handler
+        const citation = findCitationByReference(source);
+        if (citation) {
+            sourceBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                showCitationPopup(citation);
+            });
+            sourceBtn.style.cursor = 'pointer';
+        } else {
+            sourceBtn.style.cursor = 'default';
+            sourceBtn.title = 'Citation details not available';
+        }
+        
         sourcesDiv.appendChild(sourceBtn);
     });
     
@@ -187,6 +267,7 @@ function clearResults() {
     document.getElementById('loading-state').style.display = 'none';
     document.getElementById('initial-state').style.display = 'flex';
     document.getElementById('inputText').value = '';
+    currentCitations = [];
     clearFile();
 }
 
@@ -349,7 +430,8 @@ async function exportToWord() {
             body: JSON.stringify({
                 original_text: originalTextContent,
                 corrected_text: correctedText,
-                mistakes: mistakes
+                mistakes: mistakes,
+                citations: currentCitations || []
             })
         });
         
@@ -526,6 +608,7 @@ async function proofreadFile() {
         
         const data = await response.json();
         hideLoadingState();
+        currentCitations = data.citations || [];
         displayDocxResults(data);
         
     } catch (error) {
@@ -630,6 +713,7 @@ function hideDocxResults() {
 function clearDocxResults() {
     hideDocxResults();
     clearFile();
+    currentCitations = [];
     currentDownloadFilename = null;
     document.getElementById('initial-state').style.display = 'flex';
 }

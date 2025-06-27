@@ -2,8 +2,6 @@ import os
 import json
 import time
 import tempfile
-import uuid
-import zipfile
 from typing import Optional
 from io import BytesIO
 from datetime import datetime
@@ -18,7 +16,6 @@ from docx import Document
 from docx.shared import RGBColor
 from docx.enum.text import WD_COLOR_INDEX
 from word_revisions import create_word_track_changes_docx
-import re
 import xml.etree.ElementTree as ET
 
 # Load environment variables
@@ -62,12 +59,59 @@ assistant = client.beta.assistants.create(
     ###Always follow the styling guide in the vector store###
     ###Do not answer any question except doing proof-reading###
     ###For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters###
+    ###IMPORTANT: Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.###
     """,
     tools=[{"type": "file_search"}],
     tool_resources={"file_search": {"vector_store_ids": ["vs_fI8rtRRKx66Khk1CieweBGRU"]}},
     temperature=0.1,
     top_p=0.5
 )
+
+def wait_for_run_completion(client, thread_id, run_id, max_timeout=120):
+    """Wait for a run to complete with timeout"""
+    timeout_counter = 0
+    run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+    
+    while run.status in ['queued', 'in_progress', 'cancelling'] and timeout_counter < max_timeout:
+        time.sleep(1)
+        timeout_counter += 1
+        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+    
+    if timeout_counter >= max_timeout:
+        raise HTTPException(status_code=408, detail="Request timeout - AI processing took too long")
+    
+    return run
+
+def extract_citations_from_message(client, message):
+    """Extract citations from a message"""
+    citations = []
+    try:
+        if hasattr(message.content[0].text, 'annotations') and message.content[0].text.annotations:
+            annotations = message.content[0].text.annotations
+            for index, annotation in enumerate(annotations):
+                # Use the recommended approach from OpenAI docs
+                if file_citation := getattr(annotation, "file_citation", None):
+                    try:
+                        cited_file = client.files.retrieve(file_citation.file_id)
+                        citation_data = {
+                            'text': annotation.text if hasattr(annotation, 'text') else '',
+                            'file_name': cited_file.filename if cited_file else '',
+                            'index': index
+                        }
+                        citations.append(citation_data)
+                    except Exception as e:
+                        # Add citation without file details if retrieval fails
+                        citation_data = {
+                            'text': annotation.text if hasattr(annotation, 'text') else '',
+                            'file_name': 'Unknown file',
+                            'index': index
+                        }
+                        citations.append(citation_data)
+    except Exception as e:
+        # Log error but don't crash
+        pass
+    
+    return citations
 
 class ProofReadRequest(BaseModel):
     text: str
@@ -76,12 +120,14 @@ class ProofReadResponse(BaseModel):
     original_text: str
     corrected_text: str
     mistakes: list
+    citations: list
     status: str
 
 class ExportToWordRequest(BaseModel):
     original_text: str
     corrected_text: str
     mistakes: list
+    citations: list = []
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -111,25 +157,22 @@ async def proofread_text(request: ProofReadRequest):
             assistant_id=assistant.id
         )
         
-        # Wait for completion
-        while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1)
-            run = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
-                run_id=run.id
-            )
+        # Wait for completion with timeout
+        run = wait_for_run_completion(client, thread.id, run.id)
         
         if run.status == 'completed':
-            # Get the assistant's response
+            # Get the assistant's response with citations
             messages = client.beta.threads.messages.list(
                 thread_id=thread.id
             )
             
-            # Extract the assistant's response
+            # Extract the assistant's response and citations
             assistant_response = ""
+            citations = []
             for message in messages.data:
                 if message.role == "assistant":
                     assistant_response = message.content[0].text.value
+                    citations = extract_citations_from_message(client, message)
                     break
             
             # Parse the response to extract mistakes and corrections
@@ -204,6 +247,7 @@ async def proofread_text(request: ProofReadRequest):
                 original_text=request.text,
                 corrected_text=corrected_text,
                 mistakes=mistakes,
+                citations=citations,
                 status="completed"
             )
         
@@ -212,6 +256,7 @@ async def proofread_text(request: ProofReadRequest):
                 original_text=request.text,
                 corrected_text="",
                 mistakes=["Assistant requires additional action"],
+                citations=[],
                 status="requires_action"
             )
         
@@ -243,7 +288,8 @@ async def export_to_word(request: ExportToWordRequest):
         docx_buffer = create_tracked_changes_docx(
             request.original_text, 
             request.corrected_text, 
-            request.mistakes
+            request.mistakes,
+            request.citations
         )
         
         # Save to temp directory
@@ -280,14 +326,15 @@ def extract_text_from_docx(file_content: bytes) -> str:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading DOCX file: {str(e)}")
 
-def create_tracked_changes_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
+def create_tracked_changes_docx(original_text: str, corrected_text: str, mistakes: list, citations: list = None) -> BytesIO:
     """Create a DOCX file with proper Word track changes"""
-    return create_word_track_changes_docx(original_text, corrected_text, mistakes)
+    return create_word_track_changes_docx(original_text, corrected_text, mistakes, citations)
 
 class DocxProofReadResponse(BaseModel):
     original_filename: str
     mistakes_count: int
     mistakes: list
+    citations: list
     status: str
     download_filename: str
 
@@ -326,25 +373,22 @@ async def proofread_docx(file: UploadFile = File(...)):
             assistant_id=assistant.id
         )
         
-        # Wait for completion
-        while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1)
-            run = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
-                run_id=run.id
-            )
+        # Wait for completion with timeout
+        run = wait_for_run_completion(client, thread.id, run.id)
         
         if run.status == 'completed':
-            # Get the assistant's response
+            # Get the assistant's response with citations
             messages = client.beta.threads.messages.list(
                 thread_id=thread.id
             )
             
-            # Extract the assistant's response
+            # Extract the assistant's response and citations
             assistant_response = ""
+            citations = []
             for message in messages.data:
                 if message.role == "assistant":
                     assistant_response = message.content[0].text.value
+                    citations = extract_citations_from_message(client, message)
                     break
             
             # Parse the response to extract mistakes and corrections
@@ -416,7 +460,7 @@ async def proofread_docx(file: UploadFile = File(...)):
                             mistakes.append(line.strip())
             
             # Create DOCX with track changes
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes)
+            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes, citations)
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -433,6 +477,7 @@ async def proofread_docx(file: UploadFile = File(...)):
                 original_filename=file.filename,
                 mistakes_count=len(mistakes),
                 mistakes=mistakes,
+                citations=citations,
                 status="completed",
                 download_filename=download_filename
             )
