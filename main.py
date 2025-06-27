@@ -51,12 +51,11 @@ assistant = client.beta.assistants.create(
     Format your response exactly as follows:
     
     CORRECTED TEXT:
-    [The corrected version of the text goes here]
+    [The corrected version of the text]
     
     MISTAKES:
     [List each mistake on a separate line, describing what was wrong and how it was corrected]
     
-    ##############################################
     ***IMPORTANT Notes:
     1. Always follow the styling guide in the vector store
     2. Do not answer any question except doing proof-reading
