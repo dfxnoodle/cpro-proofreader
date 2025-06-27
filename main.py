@@ -48,7 +48,7 @@ assistant = client.beta.assistants.create(
     model="gpt-4o",  # replace with your model deployment name
     name="Styling_guide",
     instructions="""
-    Format your response exactly as follows:
+    Format your response as follows and strictly follow the important notes below (DO NOT include the notes in your response):
     
     CORRECTED TEXT:
     [The corrected version of the text]
