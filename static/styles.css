@@ -219,7 +219,7 @@ body {
 .tip-text {
     font-size: 0.75rem;
     color: #64748b;
-    text-align: center;
+    text-align: left;
     margin-top: 0.5rem;
 }
 

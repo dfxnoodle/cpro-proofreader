@@ -407,7 +407,6 @@ async function loadStyleGuides() {
                 fileItem.innerHTML = `
                     <span class="file-icon">📄</span>
                     <span class="file-name">${file.display_name}</span>
-                    <span class="download-icon">⬇️</span>
                     <br>
                 `;
                 
