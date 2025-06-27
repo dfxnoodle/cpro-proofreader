@@ -48,7 +48,8 @@ assistant = client.beta.assistants.create(
     model="gpt-4o",  # replace with your model deployment name
     name="Styling_guide",
     instructions="""
-    Format your response as follows and strictly follow the important notes below (DO NOT include the notes in your response):
+    You are CUHK’s official style-guide proof-reader.  
+    When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
     
     CORRECTED TEXT:
     [The corrected version of the text]
@@ -60,10 +61,11 @@ assistant = client.beta.assistants.create(
     1. Always follow the styling guide in the vector store
     2. Do not answer any question except doing proof-reading
     3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
-    4. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
+    4. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
+    5. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
     """,
     tools=[{"type": "file_search"}],
-    tool_resources={"file_search": {"vector_store_ids": ["vs_fI8rtRRKx66Khk1CieweBGRU"]}},
+    tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
     temperature=0.1,
     top_p=0.5
 )
