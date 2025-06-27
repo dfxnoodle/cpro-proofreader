@@ -1159,145 +1159,66 @@ body {
 
 /* Responsive Design */
 @media (max-width: 1024px) {
+    body {
+        height: auto;
+        overflow-y: auto;
+    }
+
+    .container {
+        height: auto;
+        padding: 1rem;
+    }
+
     .main-wrapper {
         flex-direction: column;
+        height: auto;
+        overflow: visible;
     }
-    
+
     .sidebar {
         width: 100%;
-        position: relative;
-        max-height: 50vh;
-        overflow-y: auto;
+        border-right: none;
+        border-bottom: 1px solid #e2e8f0;
     }
-    
-    .main-content {
-        flex: 1;
-        min-height: 50vh;
-        overflow-y: auto;
-    }
-    
+
     .comparison-section {
         grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-    
-    .text-content {
-        min-height: 180px;
     }
 }
 
 @media (max-width: 768px) {
-    .container {
-        padding: 1rem;
-    }
-    
-    .header {
-        padding: 1rem;
-    }
-    
-    .logo-section {
-        flex-direction: column;
-        text-align: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-    
-    .logo {
-        width: 180px;
-        height: auto;
-        max-width: 100%;
-    }
-    
-    .sidebar {
-        width: 100%;
-        padding: 1rem;
-    }
-    
     .main-header {
-        padding: 1rem;
+        padding: 1.5rem 1.5rem 1rem;
     }
-    
+
     .main-title {
-        font-size: 1.1rem;
-        line-height: 1.3;
+        font-size: 1.25rem;
     }
-    
-    .subtitle {
-        font-size: 0.95rem;
-        line-height: 1.4;
-    }
-    
+
     .results-section {
-        padding: 1rem;
-        flex: 1;
-        overflow-y: auto;
+        padding: 0 1.5rem 1.5rem;
     }
-    
-    .text-content {
-        padding: 1rem;
-        min-height: 200px;
-        font-size: 0.875rem;
-        line-height: 1.6;
-    }
-    
+
     .column-header {
         flex-direction: column;
-        gap: 0.75rem;
         align-items: flex-start;
-        padding: 1rem;
-    }
-    
-    .column-actions {
-        width: 100%;
-        justify-content: space-between;
-        flex-wrap: wrap;
         gap: 0.5rem;
     }
-    
-    .copy-btn,
-    .export-btn {
-        flex: 1;
-        min-width: 100px;
-        justify-content: center;
-        font-size: 0.8rem;
-        padding: 0.6rem 0.8rem;
+
+    .column-actions {
+        width: 100%;
     }
-    
-    .issues-section {
-        padding: 1rem;
-        margin-top: 1rem;
-    }
-    
+
     .issues-list li {
-        padding: 1rem 1rem 1rem 2.5rem;
-        font-size: 0.8rem;
-        line-height: 1.5;
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.75rem;
+        gap: 0.5rem;
     }
-    
-    .issues-list li::before {
-        width: 20px;
-        height: 20px;
-        font-size: 0.7rem;
-        left: 0.75rem;
-        top: 1rem;
-        transform: none;
-    }
-    
-    .issue-source-btn {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.7rem;
-    }
-    
+
     .footer-text {
-        position: relative;
-        bottom: auto;
-        right: auto;
+        position: static;
+        padding: 1.5rem;
         text-align: center;
-        padding: 1rem;
-        background: #f8fafc;
         border-top: 1px solid #e2e8f0;
     }
 }
@@ -1306,64 +1227,36 @@ body {
     .container {
         padding: 0.5rem;
     }
-    
-    .sidebar {
-        padding: 0.75rem;
+
+    .sidebar,
+    .main-header,
+    .results-section {
+        padding: 1rem;
     }
-    
-    .logo {
-        width: 160px;
-        height: auto;
-    }
-    
+
     .main-title {
-        font-size: 1rem;
-        text-align: center;
+        font-size: 1.1rem;
     }
-    
-    .header-icon {
-        font-size: 1.25rem;
-    }
-    
-    .subtitle {
-        font-size: 0.875rem;
-    }
-    
-    .input-section h2 {
-        font-size: 0.875rem;
-    }
-    
+
     .text-input {
-        min-height: 120px;
-        font-size: 0.875rem;
-    }
-    
-    .text-content {
-        padding: 0.75rem;
         min-height: 150px;
-        font-size: 0.8rem;
     }
-    
-    .issues-section {
-        padding: 0.75rem;
+
+    .column-header {
+        padding: 0.75rem 1rem;
     }
-    
+
+    .text-content {
+        padding: 1rem;
+    }
+
     .issues-list li {
-        padding: 0.75rem 0.75rem 0.75rem 2rem;
-        font-size: 0.75rem;
+        padding: 1rem;
+        padding-left: 3rem;
     }
-    
+
     .issues-list li::before {
-        width: 18px;
-        height: 18px;
-        font-size: 0.65rem;
-        left: 0.5rem;
-    }
-    
-    .copy-btn,
-    .export-btn {
-        font-size: 0.75rem;
-        padding: 0.5rem 0.6rem;
+        left: 1rem;
     }
 }
 
