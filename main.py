@@ -506,9 +506,9 @@ async def get_style_guides():
         
         files = []
         for filename in os.listdir(style_guides_dir):
-            if filename.endswith(('.pdf', '.doc', '.docx')):
+            if filename.endswith(('.pdf', '.doc', '.docx', '.zip', '.md')):
                 # Clean up the display name
-                display_name = filename.replace('.pdf', '').replace('.doc', '').replace('.docx', '')
+                display_name = filename.replace('.pdf', '').replace('.doc', '').replace('.docx', '').replace('.zip', '').replace('.md', '')
                 display_name = display_name.replace('%20', ' ')  # Handle URL encoding
                 
                 files.append({

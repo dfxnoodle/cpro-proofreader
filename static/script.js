@@ -459,6 +459,24 @@ async function exportToWord() {
     }
 }
 
+// Get appropriate icon based on file extension
+function getFileIcon(filename) {
+    const extension = filename.split('.').pop().toLowerCase();
+    switch (extension) {
+        case 'pdf':
+            return '📄';
+        case 'doc':
+        case 'docx':
+            return '📝';
+        case 'zip':
+            return '🗜️';
+        case 'md':
+            return '📋';
+        default:
+            return '📄';
+    }
+}
+
 // Load style guides dynamically
 async function loadStyleGuides() {
     try {
@@ -487,7 +505,7 @@ async function loadStyleGuides() {
                 fileItem.download = true;
                 
                 fileItem.innerHTML = `
-                    <span class="file-icon">📄</span>
+                    <span class="file-icon">${getFileIcon(file.filename)}</span>
                     <span class="file-name">${file.display_name}</span>
                     <br>
                 `;
