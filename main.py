@@ -40,35 +40,85 @@ app.mount("/styling_guides", StaticFiles(directory="styling_guides"), name="styl
 client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2025-01-01-preview"
+    api_version="2024-05-01-preview"
 )
 
-# Create assistant (you might want to store the assistant ID and reuse it)
-assistant = client.beta.assistants.create(
-    model="gpt-4o",  # replace with your model deployment name
-    name="Styling_guide",
-    instructions="""
-    You are CUHK’s official style-guide proof-reader.  
-    When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
+# Assistant configuration
+ASSISTANT_CONFIG_FILE = "assistant_config.json"
+
+def get_or_create_assistant():
+    """Get existing assistant or create a new one if it doesn't exist"""
+    assistant_id = None
     
-    CORRECTED TEXT:
-    [The corrected version of the text]
+    # Try to load existing assistant ID
+    if os.path.exists(ASSISTANT_CONFIG_FILE):
+        try:
+            with open(ASSISTANT_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                assistant_id = config.get("assistant_id")
+        except Exception as e:
+            print(f"Error loading assistant config: {e}")
     
-    MISTAKES:
-    [List each mistake on a separate line, describing what was wrong and how it was corrected]
+    # Check if the assistant still exists
+    if assistant_id:
+        try:
+            assistant = client.beta.assistants.retrieve(assistant_id)
+            print(f"Using existing assistant: {assistant_id}")
+            return assistant
+        except Exception as e:
+            print(f"Existing assistant {assistant_id} not found, creating new one: {e}")
+            assistant_id = None
     
-    ***IMPORTANT Notes:
-    1. Always follow the styling guide in the vector store
-    2. Do not answer any question except doing proof-reading
-    3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
-    4. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
-    5. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
-    """,
-    tools=[{"type": "file_search"}],
-    tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
-    temperature=0.1,
-    top_p=0.5
-)
+    # Create new assistant if none exists or existing one is invalid
+    print("Creating new assistant...")
+    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
+    print(f"Using model: {model_name}")
+    assistant = client.beta.assistants.create(
+        model=model_name,
+        name="Styling_guide",
+        instructions="""
+        You are CUHK's official style-guide proof-reader.  
+        When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
+        
+        CORRECTED TEXT:
+        [The corrected version of the text]
+        
+        MISTAKES:
+        [List each mistake on a separate line, describing what was wrong and how it was corrected]
+        
+        ***IMPORTANT Notes:
+        1. Always follow the styling guide in the vector store
+        2. Do not answer any question except doing proof-reading
+        3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
+        4. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
+        5. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
+        """,
+        tools=[{"type": "file_search"}],
+        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        temperature=0.1,
+        top_p=0.5
+    )
+    
+    # Save the assistant ID for future use
+    try:
+        config = {"assistant_id": assistant.id}
+        with open(ASSISTANT_CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+        print(f"Saved new assistant ID: {assistant.id}")
+    except Exception as e:
+        print(f"Error saving assistant config: {e}")
+    
+    return assistant
+
+# Global variable to store the assistant (lazy initialization)
+assistant = None
+
+def get_assistant():
+    """Get the assistant, creating it if it doesn't exist yet (lazy initialization)"""
+    global assistant
+    if assistant is None:
+        assistant = get_or_create_assistant()
+    return assistant
 
 def wait_for_run_completion(client, thread_id, run_id, max_timeout=120):
     """Wait for a run to complete with timeout"""
@@ -157,7 +207,7 @@ async def proofread_text(request: ProofReadRequest):
         # Run the thread
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
-            assistant_id=assistant.id
+            assistant_id=get_assistant().id
         )
         
         # Wait for completion with timeout
@@ -373,7 +423,7 @@ async def proofread_docx(file: UploadFile = File(...)):
         # Run the thread
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
-            assistant_id=assistant.id
+            assistant_id=get_assistant().id
         )
         
         # Wait for completion with timeout
@@ -537,3 +587,48 @@ async def download_corrected_docx(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=filename
     )
+
+@app.delete("/admin/reset-assistant")
+async def reset_assistant():
+    """
+    Administrative endpoint to reset the assistant (creates a new one)
+    """
+    global assistant
+    try:
+        # Remove the config file if it exists
+        if os.path.exists(ASSISTANT_CONFIG_FILE):
+            os.remove(ASSISTANT_CONFIG_FILE)
+        
+        # Create a new assistant
+        assistant = get_or_create_assistant()
+        
+        return {
+            "message": "Assistant reset successfully",
+            "new_assistant_id": assistant.id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset assistant: {str(e)}")
+
+@app.get("/admin/assistant-info")
+async def get_assistant_info():
+    """
+    Administrative endpoint to get current assistant information
+    """
+    try:
+        current_assistant = assistant  # Check if already loaded
+        if current_assistant is None and os.path.exists(ASSISTANT_CONFIG_FILE):
+            # Assistant not loaded yet but config exists
+            with open(ASSISTANT_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                assistant_id = config.get("assistant_id")
+        else:
+            assistant_id = current_assistant.id if current_assistant else None
+            
+        return {
+            "assistant_id": assistant_id,
+            "assistant_name": current_assistant.name if current_assistant else None,
+            "assistant_loaded": current_assistant is not None,
+            "config_file_exists": os.path.exists(ASSISTANT_CONFIG_FILE)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get assistant info: {str(e)}")

@@ -176,3 +176,9 @@ tests/
 
 # Sample files
 samples/
+
+# Assistant configuration (contains API-generated IDs)
+assistant_config.json
+
+# Test files for assistant management
+test_assistant_management.py

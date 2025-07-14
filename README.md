@@ -16,7 +16,7 @@ A FastAPI backend with HTML/CSS/JS frontend for proofreading text using Azure Op
 - Python 3.8+
 - [uv](https://docs.astral.sh/uv/) package manager
 - Azure OpenAI account and API key
-- GPT-4o model deployment
+- GPT-4.1 model deployment
 
 ## Installation
 
