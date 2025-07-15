@@ -15,6 +15,7 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.shared import RGBColor
 import difflib
+import Levenshtein
 
 
 class WordRevisionGenerator:
@@ -101,8 +102,8 @@ class WordRevisionGenerator:
     
     def _generate_word_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
         """
-        Generate word-level differences between original and corrected text.
-        Preserves spacing to avoid words sticking together.
+        Generate differences between original and corrected text using intelligent approach.
+        Uses character-level diffing for Chinese text and precise word-level for English.
         
         Args:
             original: Original text
@@ -111,32 +112,168 @@ class WordRevisionGenerator:
         Returns:
             List of tuples (change_type, text) where change_type is 'equal', 'delete', or 'insert'
         """
-        # Tokenize the text while preserving spaces
+        # Check if text is primarily Chinese
+        if self._is_chinese_text(original) or self._is_chinese_text(corrected):
+            # Use character-level diff for Chinese text
+            return self._generate_character_diff(original, corrected)
+        else:
+            # Use precise word-level diff for English text
+            return self._generate_precise_word_diff(original, corrected)
+    
+    def _is_chinese_text(self, text: str) -> bool:
+        """
+        Check if text contains Chinese characters.
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            True if text contains Chinese characters
+        """
+        chinese_char_pattern = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]')
+        return bool(chinese_char_pattern.search(text))
+    
+    def _generate_character_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
+        """
+        Generate character-level differences using Levenshtein for precise tracking.
+        
+        Args:
+            original: Original text
+            corrected: Corrected text
+            
+        Returns:
+            List of tuples (change_type, text)
+        """
+        opcodes = Levenshtein.opcodes(original, corrected)
+        
+        changes = []
+        for op, i1, i2, j1, j2 in opcodes:
+            if op == 'equal':
+                text = original[i1:i2]
+                if text:
+                    changes.append(('equal', text))
+            elif op == 'delete':
+                text = original[i1:i2]
+                if text:
+                    changes.append(('delete', text))
+            elif op == 'insert':
+                text = corrected[j1:j2]
+                if text:
+                    changes.append(('insert', text))
+            elif op == 'replace':
+                deleted_text = original[i1:i2]
+                if deleted_text:
+                    changes.append(('delete', deleted_text))
+                inserted_text = corrected[j1:j2]
+                if inserted_text:
+                    changes.append(('insert', inserted_text))
+        
+        return self._merge_consecutive_changes(changes)
+    
+    def _generate_contextual_word_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
+        """
+        Generate word-level differences with sentence context to avoid bulk replacements.
+        
+        Args:
+            original: Original text
+            corrected: Corrected text
+            
+        Returns:
+            List of tuples (change_type, text)
+        """
+        # Split into sentences first
+        original_sentences = self._split_into_sentences(original)
+        corrected_sentences = self._split_into_sentences(corrected)
+        
+        # Use sentence-level matching first
+        sentence_matcher = difflib.SequenceMatcher(None, original_sentences, corrected_sentences)
+        
+        changes = []
+        for op, i1, i2, j1, j2 in sentence_matcher.get_opcodes():
+            if op == 'equal':
+                # Sentences are identical
+                for sentence in original_sentences[i1:i2]:
+                    changes.append(('equal', sentence))
+            elif op == 'replace' and i2 - i1 == 1 and j2 - j1 == 1:
+                # Single sentence replacement - use word-level diff
+                orig_sentence = original_sentences[i1]
+                corr_sentence = corrected_sentences[j1]
+                sentence_changes = self._generate_word_level_diff(orig_sentence, corr_sentence)
+                changes.extend(sentence_changes)
+            else:
+                # Multiple sentence changes - treat as delete + insert
+                for sentence in original_sentences[i1:i2]:
+                    changes.append(('delete', sentence))
+                for sentence in corrected_sentences[j1:j2]:
+                    changes.append(('insert', sentence))
+        
+        return self._merge_consecutive_changes(changes)
+    
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """
+        Split text into sentences while preserving punctuation and spacing.
+        
+        Args:
+            text: Text to split
+            
+        Returns:
+            List of sentences including their punctuation and following spaces
+        """
+        if not text:
+            return []
+        
+        # Split on sentence-ending punctuation but keep the punctuation
+        sentence_pattern = re.compile(r'([.!?]+\s*)')
+        parts = sentence_pattern.split(text)
+        
+        sentences = []
+        current_sentence = ""
+        
+        for part in parts:
+            current_sentence += part
+            if sentence_pattern.match(part):
+                # This part contains sentence-ending punctuation
+                sentences.append(current_sentence)
+                current_sentence = ""
+        
+        # Add any remaining text as the last sentence
+        if current_sentence.strip():
+            sentences.append(current_sentence)
+        
+        return [s for s in sentences if s.strip()]
+    
+    def _generate_word_level_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
+        """
+        Generate word-level differences for a single sentence or short text.
+        
+        Args:
+            original: Original sentence
+            corrected: Corrected sentence
+            
+        Returns:
+            List of tuples (change_type, text)
+        """
+        # Tokenize preserving spaces
         original_tokens = self._tokenize_with_spaces(original)
         corrected_tokens = self._tokenize_with_spaces(corrected)
         
-        # Use difflib to find differences
         matcher = difflib.SequenceMatcher(None, original_tokens, corrected_tokens)
         
         changes = []
         for op, i1, i2, j1, j2 in matcher.get_opcodes():
             if op == 'equal':
-                # Unchanged tokens
                 text = ''.join(original_tokens[i1:i2])
                 if text:
                     changes.append(('equal', text))
             elif op == 'delete':
-                # Deleted tokens
                 text = ''.join(original_tokens[i1:i2])
                 if text:
                     changes.append(('delete', text))
             elif op == 'insert':
-                # Inserted tokens
                 text = ''.join(corrected_tokens[j1:j2])
                 if text:
                     changes.append(('insert', text))
             elif op == 'replace':
-                # Replaced tokens - treat as delete + insert
                 deleted_text = ''.join(original_tokens[i1:i2])
                 if deleted_text:
                     changes.append(('delete', deleted_text))
@@ -145,7 +282,7 @@ class WordRevisionGenerator:
                     changes.append(('insert', inserted_text))
         
         return changes
-    
+
     def _tokenize_with_spaces(self, text: str) -> List[str]:
         """
         Tokenize text while preserving spaces and punctuation.
@@ -319,7 +456,84 @@ class WordRevisionGenerator:
             return parse_xml(del_xml)
         
         return None
+    
+    def _merge_consecutive_changes(self, changes: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """
+        Merge consecutive changes of the same type to reduce noise.
+        
+        Args:
+            changes: List of (change_type, text) tuples
+            
+        Returns:
+            Optimized list with consecutive same-type changes merged
+        """
+        if not changes:
+            return changes
+        
+        merged = []
+        current_type, current_text = changes[0]
+        
+        for change_type, text in changes[1:]:
+            if change_type == current_type:
+                # Same type - merge the text
+                current_text += text
+            else:
+                # Different type - add current and start new
+                merged.append((current_type, current_text))
+                current_type, current_text = change_type, text
+        
+        # Add the last accumulated change
+        merged.append((current_type, current_text))
+        
+        return merged
 
+    def _generate_precise_word_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
+        """
+        Generate precise word-level differences for English text.
+        This method focuses on making minimal changes rather than bulk replacements.
+        
+        Args:
+            original: Original text
+            corrected: Corrected text
+            
+        Returns:
+            List of tuples (change_type, text)
+        """
+        # Tokenize the text preserving spaces and punctuation
+        original_tokens = self._tokenize_with_spaces(original)
+        corrected_tokens = self._tokenize_with_spaces(corrected)
+        
+        # Use difflib for precise sequence matching
+        matcher = difflib.SequenceMatcher(None, original_tokens, corrected_tokens)
+        
+        changes = []
+        for op, i1, i2, j1, j2 in matcher.get_opcodes():
+            if op == 'equal':
+                # Unchanged tokens
+                text = ''.join(original_tokens[i1:i2])
+                if text:
+                    changes.append(('equal', text))
+            elif op == 'delete':
+                # Deleted tokens
+                text = ''.join(original_tokens[i1:i2])
+                if text:
+                    changes.append(('delete', text))
+            elif op == 'insert':
+                # Inserted tokens
+                text = ''.join(corrected_tokens[j1:j2])
+                if text:
+                    changes.append(('insert', text))
+            elif op == 'replace':
+                # Replace tokens - show as delete old + insert new
+                deleted_text = ''.join(original_tokens[i1:i2])
+                if deleted_text:
+                    changes.append(('delete', deleted_text))
+                inserted_text = ''.join(corrected_tokens[j1:j2])
+                if inserted_text:
+                    changes.append(('insert', inserted_text))
+        
+        # Optimize consecutive changes
+        return self._merge_consecutive_changes(changes)
 
 def create_word_track_changes_docx(original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
     """
