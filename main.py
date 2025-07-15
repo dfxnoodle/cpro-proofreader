@@ -2,6 +2,7 @@ import os
 import json
 import time
 import tempfile
+import re
 from typing import Optional
 from io import BytesIO
 from datetime import datetime
@@ -80,11 +81,12 @@ def get_or_create_assistant():
         You are CUHK's official style-guide proof-reader.  
         When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
         
-        CORRECTED TEXT:
-        [The corrected version of the text]
-        
-        MISTAKES:
-        [List each mistake on a separate line, describing what was wrong and how it was corrected]
+        Return your response as a JSON object with the following structure:
+        {
+            "corrected_text": "The corrected version of the text",
+            "mistakes": ["List of mistakes found and how they were corrected"],
+            "citations": []
+        }
         
         ***IMPORTANT Notes:
         1. Always follow the styling guide in the vector store
@@ -93,9 +95,12 @@ def get_or_create_assistant():
         4. For English text, always use British English spelling and grammar rules
         5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
         6. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
+        7. Include ALL corrections and issues found, no matter how minor.
+        8. For Chinese text, list each correction separately in the mistakes array.
         """,
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        response_format={"type": "json_object"},
         temperature=0.1,
         top_p=0.5
     )
@@ -167,49 +172,6 @@ def extract_citations_from_message(client, message):
     
     return citations
 
-def clean_gpt41_mistakes(mistakes_list: list) -> list:
-    """
-    Clean and filter the mistakes list for GPT-4.1 response format
-    GPT-4.1 includes meta-comments and source references that should be filtered
-    """
-    cleaned_mistakes = []
-    
-    for mistake in mistakes_list:
-        if not mistake or not mistake.strip():
-            continue
-            
-        mistake_lower = mistake.lower().strip()
-        
-        # Skip meta-instructions that aren't actual mistakes
-        if any(skip_phrase in mistake_lower for skip_phrase in [
-            'please proofread', 'according to the styling guide', 
-            'the instruction to proofread', 'was disregarded',
-            'the sentence was not an essay', 'no other spelling',
-            'no mistakes were found', 'complies with the style'
-        ]):
-            continue
-        
-        # Skip standalone "Sources:" headers but keep actual source references that contain corrections
-        if mistake.strip() in ['Sources:', '【參考來源】', 'Reference:', 'Citation:']:
-            continue
-            
-        # Keep actual corrections and meaningful references
-        if any(keyword in mistake_lower for keyword in [
-            'corrected to', 'changed to', 'was incorrect', 'spelling error',
-            'grammar', 'punctuation', 'subject-verb agreement', 'possessive',
-            '更正為', '修正為', '語法', '拼字', '標點', 'style guide',
-            'reference:', '【參考來源：', 'section:'
-        ]):
-            cleaned_mistakes.append(mistake.strip())
-        elif mistake.strip().startswith(('-', '•', '1.', '2.', '3.', '4.', '5.')):
-            # Include numbered or bulleted corrections if they contain meaningful content
-            if any(keyword in mistake_lower for keyword in [
-                'corrected', 'changed', 'error', '錯誤', '修正', '調整'
-            ]):
-                cleaned_mistakes.append(mistake.strip())
-    
-    return cleaned_mistakes
-
 class ProofReadRequest(BaseModel):
     text: str
 
@@ -272,76 +234,54 @@ async def proofread_text(request: ProofReadRequest):
                     citations = extract_citations_from_message(client, message)
                     break
             
-            # Parse the response to extract mistakes and corrections
+            # Debug: Log the raw AI response to understand the format
+            print("=== RAW AI RESPONSE (TEXT) ===")
+            print(assistant_response)
+            print("=== END RAW AI RESPONSE (TEXT) ===")
+            
+            # Parse the JSON response
             mistakes = []
-            corrected_text = request.text  # Default to original if no corrections found
+            corrected_text = request.text  # Default to original if parsing fails
             
-            # Parse the structured response
-            if "CORRECTED TEXT:" in assistant_response and "MISTAKES:" in assistant_response:
-                # Split the response into sections
-                sections = assistant_response.split("MISTAKES:")
-                if len(sections) >= 2:
-                    # Extract corrected text
-                    corrected_section = sections[0].replace("CORRECTED TEXT:", "").strip()
-                    corrected_text = corrected_section
-                    
-                    # Extract mistakes
-                    mistakes_section = sections[1].strip()
-                    if mistakes_section:
-                        # Split mistakes by lines and filter out empty lines
-                        mistake_lines = [line.strip() for line in mistakes_section.split('\n') if line.strip()]
-                        mistakes = mistake_lines
-            else:
-                # Enhanced fallback parsing for different response formats
-                # Try to extract corrected text even if format is different
-                if "CORRECTED TEXT:" in assistant_response:
-                    # Extract text after "CORRECTED TEXT:" marker
-                    corrected_start = assistant_response.find("CORRECTED TEXT:") + len("CORRECTED TEXT:")
-                    # Find the end (either at MISTAKES: or end of response)
-                    mistakes_start = assistant_response.find("MISTAKES:")
-                    if mistakes_start != -1:
-                        corrected_text = assistant_response[corrected_start:mistakes_start].strip()
-                    else:
-                        corrected_text = assistant_response[corrected_start:].strip()
-                elif "corrected text is:" in assistant_response.lower():
-                    # Handle format like "The corrected text is: [text]"
-                    start_idx = assistant_response.lower().find("corrected text is:") + len("corrected text is:")
-                    # Extract until end of first sentence or paragraph
-                    remaining = assistant_response[start_idx:].strip()
-                    # Find the end of the corrected text (before any explanation)
-                    end_markers = [". The main", ". The issues", "\n\nThe", "\n\nMain"]
-                    end_idx = len(remaining)
-                    for marker in end_markers:
-                        marker_idx = remaining.find(marker)
-                        if marker_idx != -1:
-                            end_idx = min(end_idx, marker_idx + 1)  # Include the period
-                    corrected_text = remaining[:end_idx].strip()
-                elif "corrected version:" in assistant_response.lower():
-                    # Handle format like "Here is the corrected version:"
-                    start_idx = assistant_response.lower().find("corrected version:") + len("corrected version:")
-                    remaining = assistant_response[start_idx:].strip()
-                    # Look for the text in the next few lines
-                    lines = remaining.split('\n')
-                    corrected_lines = []
-                    for line in lines:
-                        line = line.strip()
-                        if line and not any(marker in line.lower() for marker in ['main corrections', 'corrections made', 'issues', 'mistakes']):
-                            corrected_lines.append(line)
-                        elif corrected_lines:  # Stop when we hit explanation text
-                            break
-                    if corrected_lines:
-                        corrected_text = ' '.join(corrected_lines)
+            try:
+                # Try to parse as JSON first
+                response_data = json.loads(assistant_response)
+                corrected_text = response_data.get("corrected_text", request.text)
+                mistakes = response_data.get("mistakes", [])
                 
-                # Extract mistakes with more flexible parsing
-                response_lines = assistant_response.split('\n')
-                for line in response_lines:
-                    line_lower = line.lower().strip()
-                    if any(keyword in line_lower for keyword in ['mistake', 'error', 'issue', 'problem', 'correction', 'fixed']):
-                        if line.strip() and not line.strip().startswith('MISTAKES:'):
-                            mistakes.append(line.strip())
+                # Debug: Log parsed JSON data
+                print(f"=== PARSED JSON (TEXT) ===")
+                print(f"Corrected text length: {len(corrected_text)}")
+                print(f"Number of mistakes: {len(mistakes)}")
+                for i, mistake in enumerate(mistakes):
+                    print(f"{i+1}: {mistake}")
+                print(f"=== END PARSED JSON (TEXT) ===")
+                
+            except json.JSONDecodeError:
+                print("Failed to parse JSON, falling back to text parsing")
+                # Simple fallback: extract any numbered lines as mistakes
+                lines = assistant_response.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
+                        mistakes.append(line)
+                
+                # Try to find corrected text in response
+                if "corrected text" in assistant_response.lower():
+                    # Extract text after any corrected text marker
+                    markers = ["corrected text:", "修正後：", "修正版本："]
+                    for marker in markers:
+                        if marker in assistant_response.lower():
+                            start_idx = assistant_response.lower().find(marker) + len(marker)
+                            # Take next 500 chars or until double newline
+                            remaining = assistant_response[start_idx:start_idx+500]
+                            if '\n\n' in remaining:
+                                corrected_text = remaining[:remaining.find('\n\n')].strip()
+                            else:
+                                corrected_text = remaining.strip()
+                            break
             
-            # Clean up mistakes for GPT-4.1 format (remove meta-comments and standalone sources)
-            mistakes = clean_gpt41_mistakes(mistakes)
+            # Show mistakes as they are returned from the AI without filtering
             
             return ProofReadResponse(
                 original_text=request.text,
@@ -491,79 +431,57 @@ async def proofread_docx(file: UploadFile = File(...)):
                     citations = extract_citations_from_message(client, message)
                     break
             
+            # Debug: Log the raw AI response to understand the format
+            print("=== RAW AI RESPONSE (DOCX) ===")
+            print(assistant_response)
+            print("=== END RAW AI RESPONSE (DOCX) ===")
+            
             # Parse the response to extract mistakes and corrections
             mistakes = []
-            corrected_text = extracted_text  # Default to original if no corrections found
+            corrected_text = extracted_text  # Default to original if parsing fails
             
-            # Parse the structured response
-            if "CORRECTED TEXT:" in assistant_response and "MISTAKES:" in assistant_response:
-                # Split the response into sections
-                sections = assistant_response.split("MISTAKES:")
-                if len(sections) >= 2:
-                    # Extract corrected text
-                    corrected_section = sections[0].replace("CORRECTED TEXT:", "").strip()
-                    corrected_text = corrected_section
-                    
-                    # Extract mistakes
-                    mistakes_section = sections[1].strip()
-                    if mistakes_section:
-                        # Split mistakes by lines and filter out empty lines
-                        mistake_lines = [line.strip() for line in mistakes_section.split('\n') if line.strip()]
-                        mistakes = mistake_lines
-            else:
-                # Enhanced fallback parsing for different response formats
-                # Try to extract corrected text even if format is different
-                if "CORRECTED TEXT:" in assistant_response:
-                    # Extract text after "CORRECTED TEXT:" marker
-                    corrected_start = assistant_response.find("CORRECTED TEXT:") + len("CORRECTED TEXT:")
-                    # Find the end (either at MISTAKES: or end of response)
-                    mistakes_start = assistant_response.find("MISTAKES:")
-                    if mistakes_start != -1:
-                        corrected_text = assistant_response[corrected_start:mistakes_start].strip()
-                    else:
-                        corrected_text = assistant_response[corrected_start:].strip()
-                elif "corrected text is:" in assistant_response.lower():
-                    # Handle format like "The corrected text is: [text]"
-                    start_idx = assistant_response.lower().find("corrected text is:") + len("corrected text is:")
-                    # Extract until end of first sentence or paragraph
-                    remaining = assistant_response[start_idx:].strip()
-                    # Find the end of the corrected text (before any explanation)
-                    end_markers = [". The main", ". The issues", "\n\nThe", "\n\nMain"]
-                    end_idx = len(remaining)
-                    for marker in end_markers:
-                        marker_idx = remaining.find(marker)
-                        if marker_idx != -1:
-                            end_idx = min(end_idx, marker_idx + 1)  # Include the period
-                    corrected_text = remaining[:end_idx].strip()
-                elif "corrected version:" in assistant_response.lower():
-                    # Handle format like "Here is the corrected version:"
-                    start_idx = assistant_response.lower().find("corrected version:") + len("corrected version:")
-                    remaining = assistant_response[start_idx:].strip()
-                    # Look for the text in the next few lines
-                    lines = remaining.split('\n')
-                    corrected_lines = []
-                    for line in lines:
-                        line = line.strip()
-                        if line and not any(marker in line.lower() for marker in ['main corrections', 'corrections made', 'issues', 'mistakes']):
-                            corrected_lines.append(line)
-                        elif corrected_lines:  # Stop when we hit explanation text
-                            break
-                    if corrected_lines:
-                        corrected_text = ' '.join(corrected_lines)
+            try:
+                # Try to parse as JSON first
+                response_data = json.loads(assistant_response)
+                corrected_text = response_data.get("corrected_text", extracted_text)
+                mistakes = response_data.get("mistakes", [])
                 
-                # Extract mistakes with more flexible parsing
-                response_lines = assistant_response.split('\n')
-                for line in response_lines:
-                    line_lower = line.lower().strip()
-                    if any(keyword in line_lower for keyword in ['mistake', 'error', 'issue', 'problem', 'correction', 'fixed']):
-                        if line.strip() and not line.strip().startswith('MISTAKES:'):
-                            mistakes.append(line.strip())
+                # Debug: Log parsed JSON data
+                print(f"=== PARSED JSON (DOCX) ===")
+                print(f"Corrected text length: {len(corrected_text)}")
+                print(f"Number of mistakes: {len(mistakes)}")
+                for i, mistake in enumerate(mistakes):
+                    print(f"{i+1}: {mistake}")
+                print(f"=== END PARSED JSON (DOCX) ===")
+                
+            except json.JSONDecodeError:
+                print("Failed to parse JSON, falling back to text parsing")
+                # Simple fallback: extract any numbered lines as mistakes
+                lines = assistant_response.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
+                        mistakes.append(line)
+                
+                # Try to find corrected text in response
+                if "corrected text" in assistant_response.lower():
+                    # Extract text after any corrected text marker
+                    markers = ["corrected text:", "修正後：", "修正版本："]
+                    for marker in markers:
+                        if marker in assistant_response.lower():
+                            start_idx = assistant_response.lower().find(marker) + len(marker)
+                            # Take next 500 chars or until double newline
+                            remaining = assistant_response[start_idx:start_idx+500]
+                            if '\n\n' in remaining:
+                                corrected_text = remaining[:remaining.find('\n\n')].strip()
+                            else:
+                                corrected_text = remaining.strip()
+                            break
             
-            # Clean mistakes for GPT-4.1 format
-            cleaned_mistakes = clean_gpt41_mistakes(mistakes)
+            # Show mistakes as they are returned from the AI without filtering
             
             # Create DOCX with track changes
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, cleaned_mistakes, citations)
+            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes, citations)
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -578,8 +496,8 @@ async def proofread_docx(file: UploadFile = File(...)):
             
             return DocxProofReadResponse(
                 original_filename=file.filename,
-                mistakes_count=len(cleaned_mistakes),
-                mistakes=cleaned_mistakes,
+                mistakes_count=len(mistakes),
+                mistakes=mistakes,
                 citations=citations,
                 status="completed",
                 download_filename=download_filename

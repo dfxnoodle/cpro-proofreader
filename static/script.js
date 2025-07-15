@@ -78,67 +78,148 @@ function setLoadingState(loading) {
 
 // Helper function to parse mistake text and extract sources
 function parseMistakeText(mistakeText) {
-    // Remove leading numbers (e.g., "1. ", "2. ", etc.)
-    let cleanText = mistakeText.replace(/^\d+\.\s*/, '');
+    // Remove leading numbers and dashes (e.g., "1. ", "2. ", "- ")
+    let cleanText = mistakeText.replace(/^[\d\-]\.\s*/, '').replace(/^-\s*/, '');
     
-    // Extract source references for new GPT-4.1 format
-    // Look for patterns like:
-    // - "Section X.X (Description)"
-    // - "English Style Guide, Section: ..."
-    // - "(Reference: English Style Guide, Spelling section)"
-    const newSourceRegex = /\(Reference:[^)]+\)|Section\s+\d+\.\d+\s*\([^)]+\)|[A-Z][^,]*Style\s+Guide[^.]*\./gi;
-    const oldSourceRegex = /【[^】]+】|\[\d+\]/g;
-    
-    // Try new format first, then fall back to old format
-    let sources = cleanText.match(newSourceRegex) || [];
-    if (sources.length === 0) {
-        sources = cleanText.match(oldSourceRegex) || [];
+    // Check if this contains Chinese characters - if so, return as-is without filtering
+    const containsChinese = /[\u4e00-\u9fff]/.test(cleanText);
+    if (containsChinese) {
+        return {
+            text: cleanText.trim(),
+            sources: []
+        };
     }
     
-    // Remove source references from the main text
-    cleanText = cleanText.replace(newSourceRegex, '').replace(oldSourceRegex, '').trim();
+    // Check if this is a standalone citation first (before applying regex)
+    if (cleanText.match(/^(CUHK\s+Style\s+Guide|All\s+corrections\s+are\s+based|CUHK\s+樣式指南|所有修正|中大.*指南)/i)) {
+        return {
+            text: '', // Empty text since this is just a citation
+            sources: [cleanText.trim()]
+        };
+    }
     
-    // Clean up any trailing periods or commas
-    cleanText = cleanText.replace(/[.,]\s*$/, '').trim();
+    // More conservative regex - only match clear citation patterns for English content
+    // Only captures text clearly in parentheses or at the end as standalone references
+    const sourceRegex = /\((?:[^)]*(?:see|style\s+guide|CUHK|capitalisation|capitalization|spelling|punctuation|grammar|possessive|formal\s+writing|section|guide)[^)]*)\)|(?:\s*(?:CUHK\s+[^.]*(?:Style\s+Guide|指南)[^.]*\.|All\s+corrections\s+are\s+based[^.]*\.)\s*)$/gi;
     
-    return {
+    // Find and extract source references
+    let sources = cleanText.match(sourceRegex) || [];
+    
+    // Clean up sources by removing leading whitespace
+    sources = sources.map(source => source.trim());
+    
+    // Only remove source references from the main text if we actually found clear citations
+    if (sources.length > 0) {
+        cleanText = cleanText.replace(sourceRegex, '').trim();
+    }
+    
+    // Clean up any trailing periods, commas, or extra whitespace
+    cleanText = cleanText.replace(/[.,。，]\s*$/, '').replace(/\s+/g, ' ').trim();
+    
+    const result = {
         text: cleanText,
         sources: sources
     };
+    
+    return result;
 }
 
 // Function to find citation by reference text or index
 function findCitationByReference(referenceText) {
-    // Handle new GPT-4.1 format: Section references and style guide references
-    if (referenceText.includes('Section') || referenceText.includes('Style Guide') || referenceText.includes('Reference:')) {
-        // For new format, create a synthetic citation object
+    // More permissive check for citation patterns - includes Chinese keywords
+    const citationKeywords = ['see', 'style guide', 'Style Guide', 'CUHK', 'capitalisation', 'capitalization',
+                             'spelling', 'punctuation', 'grammar', 'possessive', 'formal writing', 
+                             'Section', 'all corrections are based', 'guide', 'reference',
+                             '參見', '樣式', '指南', '中大', '拼寫', '標點', '語法', '格式', '正式', 
+                             '寫作', '部分', '章節', '所有修正', '修訂', '更正'];
+    
+    // Check if reference text contains any citation keywords
+    const hasCitationKeyword = citationKeywords.some(keyword => 
+        referenceText.toLowerCase().includes(keyword.toLowerCase()) || 
+        referenceText.includes(keyword)
+    );
+    
+    if (hasCitationKeyword) {
+        // For citation format, create a synthetic citation object
         let fileName = 'Style Guide';
+        let categoryHint = '';
+        let sectionInfo = '';
         
-        // Try to determine which style guide based on content
-        if (referenceText.toLowerCase().includes('english')) {
-            fileName = 'English Style Guide';
-        } else if (referenceText.toLowerCase().includes('chinese') || referenceText.includes('中文')) {
-            fileName = 'Chinese Style Guide';
+        // Try to determine which style guide and category based on content
+        if (referenceText.toLowerCase().includes('english') || 
+            (referenceText.includes('CUHK') && !referenceText.includes('中文') && !referenceText.includes('Chinese'))) {
+            fileName = 'CUHK English Style Guide';
+        } else if (referenceText.toLowerCase().includes('chinese') || 
+                   referenceText.includes('中文') || 
+                   referenceText.includes('中大') ||
+                   referenceText.includes('樣式指南')) {
+            fileName = 'CUHK Chinese Style Guide';
+        }
+        
+        // Extract section information if present
+        const sectionMatch = referenceText.match(/Section\s+([\d.]+)|部分\s*([\d.]+)|章節\s*([\d.]+)/i);
+        if (sectionMatch) {
+            sectionInfo = `Section ${sectionMatch[1] || sectionMatch[2] || sectionMatch[3]}`;
+        }
+        
+        // Determine category hint for better user understanding (English and Chinese)
+        if (referenceText.toLowerCase().includes('capitalisation') || 
+            referenceText.toLowerCase().includes('capitalization') ||
+            referenceText.toLowerCase().includes('title case') ||
+            referenceText.includes('大小寫') ||
+            referenceText.includes('標題格式')) {
+            categoryHint = 'Capitalisation and Title Case';
+        } else if (referenceText.toLowerCase().includes('spelling') || 
+                   referenceText.includes('拼寫') ||
+                   referenceText.includes('拼字')) {
+            categoryHint = 'Spelling';
+        } else if (referenceText.toLowerCase().includes('punctuation') || 
+                   referenceText.includes('標點') ||
+                   referenceText.includes('標點符號')) {
+            categoryHint = 'Punctuation';
+        } else if (referenceText.toLowerCase().includes('grammar') || 
+                   referenceText.includes('語法') ||
+                   referenceText.includes('文法')) {
+            categoryHint = 'Grammar';
+        } else if (referenceText.toLowerCase().includes('apostrophe') || 
+                   referenceText.toLowerCase().includes('possessive') ||
+                   referenceText.includes('撇號') ||
+                   referenceText.includes('所有格')) {
+            categoryHint = 'Apostrophe Usage';
+        } else if ((referenceText.toLowerCase().includes('date') && referenceText.toLowerCase().includes('time')) ||
+                   (referenceText.includes('日期') && referenceText.includes('時間'))) {
+            categoryHint = 'Date and Time Format';
+        } else if (referenceText.toLowerCase().includes('institution') || 
+                   referenceText.toLowerCase().includes('department') ||
+                   referenceText.includes('機構') ||
+                   referenceText.includes('部門')) {
+            categoryHint = 'Institutional Names and Departments';
+        } else if (referenceText.toLowerCase().includes('formal writing') || 
+                   referenceText.toLowerCase().includes('etc') ||
+                   referenceText.includes('正式寫作') ||
+                   referenceText.includes('正式文體')) {
+            categoryHint = 'Formal Writing Conventions';
         }
         
         // Clean up the reference text for display
-        let cleanReference = referenceText.replace(/^\(Reference:\s*/, '').replace(/\)$/, '');
+        let cleanReference = referenceText
+            .replace(/^\(/, '')
+            .replace(/\)$/, '')
+            .replace(/^see\s+/, 'See ')
+            .replace(/^參見\s*/, '參見 ')
+            .replace(/^-\s*/, '')
+            .trim();
         
         return {
             text: cleanReference,
             file_name: fileName,
-            index: -1 // Special index for new format
+            category: categoryHint,
+            section: sectionInfo,
+            index: -1 // Special index for GPT-4.1 format
         };
     }
     
-    // Handle old format [0], [1], etc.
-    if (referenceText.match(/\[\d+\]/)) {
-        const index = parseInt(referenceText.replace(/[\[\]]/g, ''));
-        return currentCitations.find(citation => citation.index === index);
-    }
-    
-    // Handle old format 【...】
-    return currentCitations.find(citation => citation.text === referenceText);
+    return null;
 }
 
 // Function to show citation popup
@@ -156,7 +237,7 @@ function showCitationPopup(citation) {
     // Format content based on citation type
     let popupContent = '';
     if (citation.index === -1) {
-        // New GPT-4.1 format
+        // GPT-4.1 format
         popupContent = `
             <div class="citation-popup-content">
                 <div class="citation-popup-header">
@@ -166,11 +247,13 @@ function showCitationPopup(citation) {
                 <div class="citation-popup-body">
                     <p><strong>Reference:</strong> ${citation.text}</p>
                     <p><strong>Source:</strong> ${citation.file_name}</p>
+                    ${citation.section ? `<p><strong>Section:</strong> ${citation.section}</p>` : ''}
+                    ${citation.category ? `<p><strong>Category:</strong> ${citation.category}</p>` : ''}
                 </div>
             </div>
         `;
     } else {
-        // Old format
+        // Fallback format (if any citations still use old structure)
         popupContent = `
             <div class="citation-popup-content">
                 <div class="citation-popup-header">
@@ -218,7 +301,67 @@ function createIssueListItem(mistakeText) {
     const parsed = parseMistakeText(mistakeText);
     const li = document.createElement('li');
     
-    // Create the main text element
+    // Check if this is a standalone citation (no mistake text)
+    if (!parsed.text && parsed.sources.length > 0) {
+        // This is just a citation reference
+        li.className = 'citation-only';
+        
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.className = 'issue-sources citation-standalone';
+        
+        parsed.sources.forEach(source => {
+            const sourceBtn = document.createElement('button');
+            sourceBtn.className = 'issue-source-btn citation-standalone-btn';
+            
+            // Truncate very long text for display while keeping full text in title
+            let displayText = source;
+            const maxLength = 80; // Maximum characters to display
+            if (source.length > maxLength) {
+                displayText = source.substring(0, maxLength) + '...';
+            }
+            
+            sourceBtn.textContent = displayText;
+            
+            // Add title attribute for tooltip on hover
+            sourceBtn.title = source;
+            
+            const citation = findCitationByReference(source);
+            if (citation) {
+                sourceBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showCitationPopup(citation);
+                });
+                sourceBtn.style.cursor = 'pointer';
+            }
+            
+            sourcesDiv.appendChild(sourceBtn);
+        });
+        
+        li.appendChild(sourcesDiv);
+        return li;
+    }
+    
+    // Fallback: if parsing removed all text but original has content, show original
+    if (!parsed.text && mistakeText.trim()) {
+        const textDiv = document.createElement('div');
+        textDiv.className = 'issue-text';
+        textDiv.textContent = mistakeText.trim();
+        li.appendChild(textDiv);
+        return li;
+    }
+    
+    // Additional safety check: if parsed text is very short compared to original, use original
+    if (parsed.text && mistakeText.trim() && 
+        parsed.text.length < mistakeText.trim().length * 0.3 && 
+        mistakeText.trim().length > 20) {
+        const textDiv = document.createElement('div');
+        textDiv.className = 'issue-text';
+        textDiv.textContent = mistakeText.trim();
+        li.appendChild(textDiv);
+        return li;
+    }
+    
+    // Regular mistake with text and optional sources
     const textDiv = document.createElement('div');
     textDiv.className = 'issue-text';
     textDiv.textContent = parsed.text;
@@ -231,7 +374,18 @@ function createIssueListItem(mistakeText) {
     parsed.sources.forEach(source => {
         const sourceBtn = document.createElement('button');
         sourceBtn.className = 'issue-source-btn';
-        sourceBtn.textContent = source;
+        
+        // Truncate very long text for display while keeping full text in title
+        let displayText = source;
+        const maxLength = 80; // Maximum characters to display
+        if (source.length > maxLength) {
+            displayText = source.substring(0, maxLength) + '...';
+        }
+        
+        sourceBtn.textContent = displayText;
+        
+        // Add title attribute for tooltip on hover (especially useful for long text)
+        sourceBtn.title = source;
         
         // Find corresponding citation and add click handler
         const citation = findCitationByReference(source);
@@ -243,7 +397,7 @@ function createIssueListItem(mistakeText) {
             sourceBtn.style.cursor = 'pointer';
         } else {
             sourceBtn.style.cursor = 'default';
-            sourceBtn.title = 'Citation details not available';
+            sourceBtn.title = source + ' (Citation details not available)';
         }
         
         sourcesDiv.appendChild(sourceBtn);
@@ -273,7 +427,7 @@ function displayResults(data) {
         const mistakesList = document.getElementById('mistakesList');
         
         mistakesList.innerHTML = '';
-        data.mistakes.forEach(mistake => {
+        data.mistakes.forEach((mistake, index) => {
             const li = createIssueListItem(mistake);
             mistakesList.appendChild(li);
         });
@@ -728,7 +882,7 @@ function displayDocxResults(data) {
     
     // Display mistakes if any
     if (data.mistakes && data.mistakes.length > 0) {
-        data.mistakes.forEach(mistake => {
+        data.mistakes.forEach((mistake, index) => {
             if (mistake.trim()) {
                 const li = createIssueListItem(mistake);
                 docxMistakesList.appendChild(li);
