@@ -17,6 +17,7 @@ from docx import Document
 from docx.shared import RGBColor
 from docx.enum.text import WD_COLOR_INDEX
 from word_revisions import create_word_track_changes_docx
+from text_preprocessor import ChineseNumberProtector
 import xml.etree.ElementTree as ET
 
 # Load environment variables
@@ -168,14 +169,23 @@ async def proofread_text(request: ProofReadRequest):
     Proofread the provided text using Azure OpenAI Assistant
     """
     try:
+        # Step 1: Protect Chinese numbers and dates (comprehensive protection)
+        number_protector = ChineseNumberProtector()
+        protected_text, protection_instructions = number_protector.protect_chinese_numbers(request.text)
+        
         # Create a thread
         thread = client.beta.threads.create()
+        
+        # Build message content with protection instructions
+        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+        if protection_instructions:
+            message_content += protection_instructions
         
         # Add user message to the thread
         message = client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
-            content=request.text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+            content=message_content
         )
         
         # Run the thread
@@ -248,12 +258,21 @@ async def proofread_text(request: ProofReadRequest):
                                 corrected_text = remaining.strip()
                             break
             
+            # Step 2: Restore protected Chinese numbers in the corrected text
+            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
+            
+            # Also restore numbers in mistake descriptions if they contain markers
+            restored_mistakes = []
+            for mistake in mistakes:
+                restored_mistake = number_protector.restore_chinese_numbers(mistake)
+                restored_mistakes.append(restored_mistake)
+            
             # Show mistakes as they are returned from the AI without filtering
             
             return ProofReadResponse(
                 original_text=request.text,
                 corrected_text=corrected_text,
-                mistakes=mistakes,
+                mistakes=restored_mistakes,
                 status="completed"
             )
         
@@ -360,14 +379,23 @@ async def proofread_docx(file: UploadFile = File(...)):
         if not extracted_text.strip():
             raise HTTPException(status_code=400, detail="No text found in the DOCX file")
         
+        # Step 1: Protect Chinese numbers and dates (comprehensive protection)
+        number_protector = ChineseNumberProtector()
+        protected_text, protection_instructions = number_protector.protect_chinese_numbers(extracted_text)
+        
         # Create a thread
         thread = client.beta.threads.create()
+        
+        # Build message content with protection instructions
+        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+        if protection_instructions:
+            message_content += protection_instructions
         
         # Add user message to the thread
         message = client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
-            content=extracted_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+            content=message_content
         )
         
         # Run the thread
@@ -439,10 +467,19 @@ async def proofread_docx(file: UploadFile = File(...)):
                                 corrected_text = remaining.strip()
                             break
             
+            # Step 2: Restore protected Chinese numbers in the corrected text
+            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
+            
+            # Also restore numbers in mistake descriptions if they contain markers
+            restored_mistakes = []
+            for mistake in mistakes:
+                restored_mistake = number_protector.restore_chinese_numbers(mistake)
+                restored_mistakes.append(restored_mistake)
+            
             # Show mistakes as they are returned from the AI without filtering
             
-            # Create DOCX with track changes
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes)
+            # Create DOCX with track changes (using original extracted_text as baseline)
+            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, restored_mistakes)
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -457,8 +494,8 @@ async def proofread_docx(file: UploadFile = File(...)):
             
             return DocxProofReadResponse(
                 original_filename=file.filename,
-                mistakes_count=len(mistakes),
-                mistakes=mistakes,
+                mistakes_count=len(restored_mistakes),
+                mistakes=restored_mistakes,
                 status="completed",
                 download_filename=download_filename
             )
