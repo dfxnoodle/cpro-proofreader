@@ -182,3 +182,4 @@ assistant_config.json
 
 # Test files for assistant management
 test_assistant_management.py
+test_citation_parsing.html

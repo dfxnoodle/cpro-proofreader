@@ -81,12 +81,25 @@ function parseMistakeText(mistakeText) {
     // Remove leading numbers (e.g., "1. ", "2. ", etc.)
     let cleanText = mistakeText.replace(/^\d+\.\s*/, '');
     
-    // Extract source references using regex for patterns like 【4:1†source】 or [0], [1], etc.
-    const sourceRegex = /【[^】]+】|\[\d+\]/g;
-    const sources = cleanText.match(sourceRegex) || [];
+    // Extract source references for new GPT-4.1 format
+    // Look for patterns like:
+    // - "Section X.X (Description)"
+    // - "English Style Guide, Section: ..."
+    // - "(Reference: English Style Guide, Spelling section)"
+    const newSourceRegex = /\(Reference:[^)]+\)|Section\s+\d+\.\d+\s*\([^)]+\)|[A-Z][^,]*Style\s+Guide[^.]*\./gi;
+    const oldSourceRegex = /【[^】]+】|\[\d+\]/g;
+    
+    // Try new format first, then fall back to old format
+    let sources = cleanText.match(newSourceRegex) || [];
+    if (sources.length === 0) {
+        sources = cleanText.match(oldSourceRegex) || [];
+    }
     
     // Remove source references from the main text
-    cleanText = cleanText.replace(sourceRegex, '').trim();
+    cleanText = cleanText.replace(newSourceRegex, '').replace(oldSourceRegex, '').trim();
+    
+    // Clean up any trailing periods or commas
+    cleanText = cleanText.replace(/[.,]\s*$/, '').trim();
     
     return {
         text: cleanText,
@@ -96,15 +109,36 @@ function parseMistakeText(mistakeText) {
 
 // Function to find citation by reference text or index
 function findCitationByReference(referenceText) {
-    // Handle both old format 【...】 and new format [0], [1], etc.
+    // Handle new GPT-4.1 format: Section references and style guide references
+    if (referenceText.includes('Section') || referenceText.includes('Style Guide') || referenceText.includes('Reference:')) {
+        // For new format, create a synthetic citation object
+        let fileName = 'Style Guide';
+        
+        // Try to determine which style guide based on content
+        if (referenceText.toLowerCase().includes('english')) {
+            fileName = 'English Style Guide';
+        } else if (referenceText.toLowerCase().includes('chinese') || referenceText.includes('中文')) {
+            fileName = 'Chinese Style Guide';
+        }
+        
+        // Clean up the reference text for display
+        let cleanReference = referenceText.replace(/^\(Reference:\s*/, '').replace(/\)$/, '');
+        
+        return {
+            text: cleanReference,
+            file_name: fileName,
+            index: -1 // Special index for new format
+        };
+    }
+    
+    // Handle old format [0], [1], etc.
     if (referenceText.match(/\[\d+\]/)) {
-        // Extract index from [0], [1], etc.
         const index = parseInt(referenceText.replace(/[\[\]]/g, ''));
         return currentCitations.find(citation => citation.index === index);
-    } else {
-        // Handle old format 【...】
-        return currentCitations.find(citation => citation.text === referenceText);
     }
+    
+    // Handle old format 【...】
+    return currentCitations.find(citation => citation.text === referenceText);
 }
 
 // Function to show citation popup
@@ -118,19 +152,40 @@ function showCitationPopup(citation) {
     // Create popup
     const popup = document.createElement('div');
     popup.className = 'citation-popup';
-    popup.innerHTML = `
-        <div class="citation-popup-content">
-            <div class="citation-popup-header">
-                <h4>Citation</h4>
-                <button class="citation-close-btn" onclick="closeCitationPopup()">×</button>
-            </div>
-            <div class="citation-popup-body">
-                <p><strong>Reference:</strong> ${citation.text}</p>
-                ${citation.file_name ? `<p><strong>Source:</strong> ${citation.file_name}</p>` : ''}
-            </div>
-        </div>
-    `;
     
+    // Format content based on citation type
+    let popupContent = '';
+    if (citation.index === -1) {
+        // New GPT-4.1 format
+        popupContent = `
+            <div class="citation-popup-content">
+                <div class="citation-popup-header">
+                    <h4>Style Guide Reference</h4>
+                    <button class="citation-close-btn" onclick="closeCitationPopup()">×</button>
+                </div>
+                <div class="citation-popup-body">
+                    <p><strong>Reference:</strong> ${citation.text}</p>
+                    <p><strong>Source:</strong> ${citation.file_name}</p>
+                </div>
+            </div>
+        `;
+    } else {
+        // Old format
+        popupContent = `
+            <div class="citation-popup-content">
+                <div class="citation-popup-header">
+                    <h4>Citation</h4>
+                    <button class="citation-close-btn" onclick="closeCitationPopup()">×</button>
+                </div>
+                <div class="citation-popup-body">
+                    <p><strong>Reference:</strong> ${citation.text}</p>
+                    ${citation.file_name ? `<p><strong>Source:</strong> ${citation.file_name}</p>` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    popup.innerHTML = popupContent;
     document.body.appendChild(popup);
     
     // Add click outside to close

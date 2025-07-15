@@ -90,8 +90,9 @@ def get_or_create_assistant():
         1. Always follow the styling guide in the vector store
         2. Do not answer any question except doing proof-reading
         3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
-        4. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
-        5. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
+        4. For English text, always use British English spelling and grammar rules
+        5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
+        6. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
         """,
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
@@ -165,6 +166,49 @@ def extract_citations_from_message(client, message):
         pass
     
     return citations
+
+def clean_gpt41_mistakes(mistakes_list: list) -> list:
+    """
+    Clean and filter the mistakes list for GPT-4.1 response format
+    GPT-4.1 includes meta-comments and source references that should be filtered
+    """
+    cleaned_mistakes = []
+    
+    for mistake in mistakes_list:
+        if not mistake or not mistake.strip():
+            continue
+            
+        mistake_lower = mistake.lower().strip()
+        
+        # Skip meta-instructions that aren't actual mistakes
+        if any(skip_phrase in mistake_lower for skip_phrase in [
+            'please proofread', 'according to the styling guide', 
+            'the instruction to proofread', 'was disregarded',
+            'the sentence was not an essay', 'no other spelling',
+            'no mistakes were found', 'complies with the style'
+        ]):
+            continue
+        
+        # Skip standalone "Sources:" headers but keep actual source references that contain corrections
+        if mistake.strip() in ['Sources:', '【參考來源】', 'Reference:', 'Citation:']:
+            continue
+            
+        # Keep actual corrections and meaningful references
+        if any(keyword in mistake_lower for keyword in [
+            'corrected to', 'changed to', 'was incorrect', 'spelling error',
+            'grammar', 'punctuation', 'subject-verb agreement', 'possessive',
+            '更正為', '修正為', '語法', '拼字', '標點', 'style guide',
+            'reference:', '【參考來源：', 'section:'
+        ]):
+            cleaned_mistakes.append(mistake.strip())
+        elif mistake.strip().startswith(('-', '•', '1.', '2.', '3.', '4.', '5.')):
+            # Include numbered or bulleted corrections if they contain meaningful content
+            if any(keyword in mistake_lower for keyword in [
+                'corrected', 'changed', 'error', '錯誤', '修正', '調整'
+            ]):
+                cleaned_mistakes.append(mistake.strip())
+    
+    return cleaned_mistakes
 
 class ProofReadRequest(BaseModel):
     text: str
@@ -295,6 +339,9 @@ async def proofread_text(request: ProofReadRequest):
                     if any(keyword in line_lower for keyword in ['mistake', 'error', 'issue', 'problem', 'correction', 'fixed']):
                         if line.strip() and not line.strip().startswith('MISTAKES:'):
                             mistakes.append(line.strip())
+            
+            # Clean up mistakes for GPT-4.1 format (remove meta-comments and standalone sources)
+            mistakes = clean_gpt41_mistakes(mistakes)
             
             return ProofReadResponse(
                 original_text=request.text,
@@ -512,8 +559,11 @@ async def proofread_docx(file: UploadFile = File(...)):
                         if line.strip() and not line.strip().startswith('MISTAKES:'):
                             mistakes.append(line.strip())
             
+            # Clean mistakes for GPT-4.1 format
+            cleaned_mistakes = clean_gpt41_mistakes(mistakes)
+            
             # Create DOCX with track changes
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes, citations)
+            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, cleaned_mistakes, citations)
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -528,8 +578,8 @@ async def proofread_docx(file: UploadFile = File(...)):
             
             return DocxProofReadResponse(
                 original_filename=file.filename,
-                mistakes_count=len(mistakes),
-                mistakes=mistakes,
+                mistakes_count=len(cleaned_mistakes),
+                mistakes=cleaned_mistakes,
                 citations=citations,
                 status="completed",
                 download_filename=download_filename
