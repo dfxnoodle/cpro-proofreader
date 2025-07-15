@@ -84,7 +84,7 @@ def get_or_create_assistant():
         Return your response as a JSON object with the following structure:
         {
             "corrected_text": "The corrected version of the text",
-            "mistakes": ["List of mistakes found and how they were corrected"],
+            "mistakes": ["List of mistakes found and how they were corrected with style guide references included"],
             "citations": []
         }
         
@@ -94,9 +94,10 @@ def get_or_create_assistant():
         3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
         4. For English text, always use British English spelling and grammar rules
         5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
-        6. Always cite your sources when making corrections. Include specific references to the style guide sections that support your corrections.
+        6. Always cite your sources when making corrections. Include specific references directly in each mistake description (e.g., "Changed X to Y. (CUHK English Style Guide, Section 2.1: Grammar Rules)")
         7. Include ALL corrections and issues found, no matter how minor.
         8. For Chinese text, list each correction separately in the mistakes array.
+        9. Citations should be embedded within each mistake description, not in a separate citations array.
         """,
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
@@ -141,37 +142,6 @@ def wait_for_run_completion(client, thread_id, run_id, max_timeout=120):
     
     return run
 
-def extract_citations_from_message(client, message):
-    """Extract citations from a message"""
-    citations = []
-    try:
-        if hasattr(message.content[0].text, 'annotations') and message.content[0].text.annotations:
-            annotations = message.content[0].text.annotations
-            for index, annotation in enumerate(annotations):
-                # Use the recommended approach from OpenAI docs
-                if file_citation := getattr(annotation, "file_citation", None):
-                    try:
-                        cited_file = client.files.retrieve(file_citation.file_id)
-                        citation_data = {
-                            'text': annotation.text if hasattr(annotation, 'text') else '',
-                            'file_name': cited_file.filename if cited_file else '',
-                            'index': index
-                        }
-                        citations.append(citation_data)
-                    except Exception as e:
-                        # Add citation without file details if retrieval fails
-                        citation_data = {
-                            'text': annotation.text if hasattr(annotation, 'text') else '',
-                            'file_name': 'Unknown file',
-                            'index': index
-                        }
-                        citations.append(citation_data)
-    except Exception as e:
-        # Log error but don't crash
-        pass
-    
-    return citations
-
 class ProofReadRequest(BaseModel):
     text: str
 
@@ -179,14 +149,12 @@ class ProofReadResponse(BaseModel):
     original_text: str
     corrected_text: str
     mistakes: list
-    citations: list
     status: str
 
 class ExportToWordRequest(BaseModel):
     original_text: str
     corrected_text: str
     mistakes: list
-    citations: list = []
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -220,18 +188,16 @@ async def proofread_text(request: ProofReadRequest):
         run = wait_for_run_completion(client, thread.id, run.id)
         
         if run.status == 'completed':
-            # Get the assistant's response with citations
+            # Get the assistant's response
             messages = client.beta.threads.messages.list(
                 thread_id=thread.id
             )
             
-            # Extract the assistant's response and citations
+            # Extract the assistant's response
             assistant_response = ""
-            citations = []
             for message in messages.data:
                 if message.role == "assistant":
                     assistant_response = message.content[0].text.value
-                    citations = extract_citations_from_message(client, message)
                     break
             
             # Debug: Log the raw AI response to understand the format
@@ -255,6 +221,7 @@ async def proofread_text(request: ProofReadRequest):
                 print(f"Number of mistakes: {len(mistakes)}")
                 for i, mistake in enumerate(mistakes):
                     print(f"{i+1}: {mistake}")
+                print(f"Citations (embedded in mistakes): N/A - now embedded")
                 print(f"=== END PARSED JSON (TEXT) ===")
                 
             except json.JSONDecodeError:
@@ -287,7 +254,6 @@ async def proofread_text(request: ProofReadRequest):
                 original_text=request.text,
                 corrected_text=corrected_text,
                 mistakes=mistakes,
-                citations=citations,
                 status="completed"
             )
         
@@ -296,7 +262,6 @@ async def proofread_text(request: ProofReadRequest):
                 original_text=request.text,
                 corrected_text="",
                 mistakes=["Assistant requires additional action"],
-                citations=[],
                 status="requires_action"
             )
         
@@ -328,8 +293,7 @@ async def export_to_word(request: ExportToWordRequest):
         docx_buffer = create_tracked_changes_docx(
             request.original_text, 
             request.corrected_text, 
-            request.mistakes,
-            request.citations
+            request.mistakes
         )
         
         # Save to temp directory
@@ -366,15 +330,14 @@ def extract_text_from_docx(file_content: bytes) -> str:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading DOCX file: {str(e)}")
 
-def create_tracked_changes_docx(original_text: str, corrected_text: str, mistakes: list, citations: list = None) -> BytesIO:
+def create_tracked_changes_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
     """Create a DOCX file with proper Word track changes"""
-    return create_word_track_changes_docx(original_text, corrected_text, mistakes, citations)
+    return create_word_track_changes_docx(original_text, corrected_text, mistakes)
 
 class DocxProofReadResponse(BaseModel):
     original_filename: str
     mistakes_count: int
     mistakes: list
-    citations: list
     status: str
     download_filename: str
 
@@ -422,13 +385,11 @@ async def proofread_docx(file: UploadFile = File(...)):
                 thread_id=thread.id
             )
             
-            # Extract the assistant's response and citations
+            # Extract the assistant's response
             assistant_response = ""
-            citations = []
             for message in messages.data:
                 if message.role == "assistant":
                     assistant_response = message.content[0].text.value
-                    citations = extract_citations_from_message(client, message)
                     break
             
             # Debug: Log the raw AI response to understand the format
@@ -481,7 +442,7 @@ async def proofread_docx(file: UploadFile = File(...)):
             # Show mistakes as they are returned from the AI without filtering
             
             # Create DOCX with track changes
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes, citations)
+            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, mistakes)
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -498,7 +459,6 @@ async def proofread_docx(file: UploadFile = File(...)):
                 original_filename=file.filename,
                 mistakes_count=len(mistakes),
                 mistakes=mistakes,
-                citations=citations,
                 status="completed",
                 download_filename=download_filename
             )
@@ -524,9 +484,9 @@ async def get_style_guides():
         
         files = []
         for filename in os.listdir(style_guides_dir):
-            if filename.endswith(('.pdf', '.doc', '.docx', '.zip', '.md')):
+            if filename.endswith(('.pdf', '.doc', '.docx', '.zip', '.md', '.json')):
                 # Clean up the display name
-                display_name = filename.replace('.pdf', '').replace('.doc', '').replace('.docx', '').replace('.zip', '').replace('.md', '')
+                display_name = filename.replace('.pdf', '').replace('.doc', '').replace('.docx', '').replace('.zip', '').replace('.md', '').replace('.json', '')
                 display_name = display_name.replace('%20', ' ')  # Handle URL encoding
                 
                 files.append({

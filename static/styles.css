@@ -742,6 +742,76 @@ body {
     margin-bottom: 0;
 }
 
+/* Citations Section */
+.citations-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1.5rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.citations-box h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 1rem;
+}
+
+.citations-box ul {
+    list-style: none;
+    counter-reset: citation-counter;
+    margin: 0;
+    padding: 0;
+}
+
+.citations-box li {
+    counter-increment: citation-counter;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    position: relative;
+    padding-left: 3rem;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: #374151;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.citations-box li::before {
+    content: counter(citation-counter);
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #3b82f6; /* Blue color for citations */
+    color: #ffffff;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.citations-box li:last-child {
+    margin-bottom: 0;
+}
+
 /* DOCX Results */
 .docx-result-content {
     max-width: 800px;
@@ -1281,4 +1351,19 @@ body {
 
 .issue-source-btn:active {
     transform: translateY(0);
+}
+
+/* Footer text styling */
+.footer-text {
+    text-align: right;
+    padding: 1rem 2rem;
+    margin-top: auto;
+    font-size: 0.875rem;
+    color: #6b7280;
+    border-top: 1px solid #e5e7eb;
+}
+
+.footer-text p {
+    margin: 0;
+    font-weight: 400;
 }
