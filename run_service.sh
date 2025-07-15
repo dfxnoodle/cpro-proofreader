@@ -15,7 +15,8 @@ else
 fi
 
 export AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY \
-       AZURE_OPENAI_DEPLOYMENT_NAME AZURE_OPENAI_API_VERSION
+       AZURE_OPENAI_DEPLOYMENT_NAME AZURE_OPENAI_API_VERSION \
+       AZURE_OPENAI_MODEL
 
 # ── 2. Pick socket path (or fall back to TCP if PORT is set) ──────────────────
 SOCKET_PATH=${SOCKET_PATH:-/run/cpro-proofreader/cpro.sock}
