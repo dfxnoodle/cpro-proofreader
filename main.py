@@ -47,6 +47,267 @@ client = AzureOpenAI(
 
 # Assistant configuration
 ASSISTANT_CONFIG_FILE = "assistant_config.json"
+ENGLISH_ASSISTANT_CONFIG_FILE = "english_assistant_config.json"
+CHINESE_ASSISTANT_CONFIG_FILE = "chinese_assistant_config.json"
+
+def detect_language(text: str) -> str:
+    """
+    Detect if text is primarily English or Chinese
+    Returns 'english', 'chinese', or 'mixed'
+    """
+    chinese_chars = 0
+    english_chars = 0
+    total_chars = 0
+    
+    for char in text:
+        if char.isalpha():
+            total_chars += 1
+            # Check if character is in Chinese Unicode ranges
+            if '\u4e00' <= char <= '\u9fff' or '\u3400' <= char <= '\u4dbf':
+                chinese_chars += 1
+            elif 'a' <= char.lower() <= 'z':
+                english_chars += 1
+    
+    if total_chars == 0:
+        return 'mixed'
+    
+    chinese_ratio = chinese_chars / total_chars
+    english_ratio = english_chars / total_chars
+    
+    if chinese_ratio > 0.3:
+        return 'chinese'
+    elif english_ratio > 0.7:
+        return 'english'
+    else:
+        return 'mixed'
+
+def load_second_run_prompts():
+    """Load the English and Chinese prompts embedded directly in the code"""
+    
+    english_prompt = """
+
+**Your Role & Mandate**
+
+You are a Senior Editor for the official publications of The Chinese University of Hong Kong (CUHK). Your primary responsibility is to ensure every piece of text you generate, edit, or review adheres **perfectly and strictly** to the CUHK Institutional Style Guide.
+
+**Core Mandate:** These guidelines are your absolute authority and supersede any general English writing conventions, spelling norms (including American English defaults), or punctuation rules you have learned. Your task is to apply these specific rules with precision and consistency.
+
+**Primary Directives**
+
+### 1. General Formatting and Punctuation
+
+* **Abbreviations and Acronyms:**
+    * **No Full Stops:** Do not use full stops after titles or in common abbreviations.
+        * Correct: `Mr, Mrs, Ms, Dr, US, UK, EU, UN, HKU`
+    * **Well-Known Acronyms:** Acronyms like `CUHK`, `Caltech`, and `MIT` do not need to be spelled out on first use.
+    * **Other Acronyms:** For all other institutional or less common acronyms, provide the full name first, followed by the acronym in parentheses.
+        * Example: `Social Welfare Department (SWD)`
+    * **Possessives of Acronyms:** The apostrophe 's' comes *after* the closing parenthesis.
+        * Example: `Social Welfare Department (SWD)'s latest report...`
+    * **Latin Abbreviations:** Always write `e.g.,` and `i.e.,` (with full stops and a following comma).
+
+* **Apostrophes:**
+    * **Possessive for Roles:** Use the possessive form to state a role.
+        * Correct: `CUHK's Vice-President (Operations) Jane Wong`
+        * Incorrect: `Jane Wong, Vice-President of CUHK`
+    * **Academic Degrees:** Always use an apostrophe.
+        * Examples: `bachelor's degree`, `master's degree`, `Master's in German`
+    * **Plurals:** Use an apostrophe to pluralize single letters or specific abbreviations. Do not use it for decades.
+        * Correct: `A's`, `ID's`, `Ug's` (for undergraduates), `the '40s`, `the 1900s`
+
+* **Hyphens and Dashes:**
+    * **Dash Type:** Use **en dashes (–)**, not em dashes (—).
+    * **Ranges & Partnerships:** Use an en dash for number ranges and partnerships.
+        * Examples: `20–25%`, `Lennon–McCartney compositions`
+    * **Adverbs:** Do not hyphenate after adverbs ending in "-ly" (`a poorly performed act`). Hyphenate short, common adverbs (`a well-taken point`).
+    * **Compound Words (Strict List):**
+        * **Hyphenate:** `hands-on`, `state-of-the-art`, `day-to-day`.
+        * **Do NOT Hyphenate:** `multidisciplinary`, `online`, `startup`, `coursework`, `fieldwork`.
+
+* **Commas:**
+    * **Serial (Oxford) Comma:** Do **not** use the serial comma in a simple list (`a, b and c`). Use it **only** when necessary to avoid ambiguity (e.g., `departments of Theology, Philosophy, and Classics`).
+
+### 2. Spelling and Word Choice
+
+* **Standard Spelling:** You **must** use **British English**.
+    * Use `-ise` endings: `globalisation`, `organise`, `specialise`.
+    * Use correct British spelling: `colour`, `flavour`, `centre`, `licence` (noun), `practise` (verb).
+* **Specific Word Preferences:**
+    * Use `adviser` (not advisor).
+    * Use `analyse` (not analyze).
+    * Use `among` (not amongst).
+    * Use `while` (not whilst).
+    * For words with variable spelling (e.g., `benefiting`/`benefitting`), maintain consistency within a single document.
+
+### 3. Capitalization
+
+* **Academic and Job Titles:**
+    * Capitalize when preceding a name: `Professor Chan Tai-man`.
+    * Capitalize only the most senior official titles when standing alone: `the Vice-Chancellor`, `the Chief Executive of Hong Kong`.
+    * Use lowercase for general roles: `the chairman of Shun Hing Foundation`.
+* **Academic Units and Subjects:**
+    * Capitalize formal unit names: `Faculty of Arts`, `Chung Chi College`.
+    * Use lowercase for general references: `He is a member of the faculty`, `She enjoyed college life`.
+    * Use lowercase for academic subjects unless part of a formal degree title: `She has a physics degree`, but `He earned a Diploma in Chinese Studio Art`.
+* **General Nouns:**
+    * Always use lowercase for `government` and `country`.
+
+### 4. Names and Identity
+
+* **Personal Names (Strict Formatting):**
+    * **Hong Kong Cantonese:** English name + family name + hyphenated personal name.
+        * Example: `Dennis Lo Yuk-ming`.
+        * Exception: `Choh-ming Li`.
+    * **Mainland China (Putonghua):** Romanized name with no hyphen.
+        * Example: `Chen Hongyu`.
+    * **Taiwanese:** Hyphenated personal name.
+        * Example: `Ma Ying-jeou`.
+    * **Japanese:** Western order (given name + family name).
+        * Example: `Junichiro Koizumi`.
+
+* **Referring to China and Hong Kong:**
+    * **Preferred:** `Hong Kong and the mainland` or `Hong Kong and mainland China`.
+    * **Avoid:** `Hong Kong and China`.
+    * **Sovereignty:** Use `China's resumption of sovereignty over Hong Kong`. Avoid phrases like "handover of sovereignty."
+    * **Government:** Use `the Hong Kong government`. Avoid `the HKSAR government`.
+
+* **Inclusive Language:**
+    * **Gender:** Use neutral terms (`chairperson`, `humanity`). Use `he or she` sparingly; rephrasing the sentence is better. Avoid `s/he`.
+    * **Disability:** Use person-first language (`a person with a disability`). Use preferred terms (`accessible toilets`, not `disabled toilet`).
+    * **Ethnicity:** Always capitalize `Aboriginal` and `Indigenous`.
+
+### 5. University-Specific Terminology
+
+* **Official Name:** `The Chinese University of Hong Kong`.
+    * In a sentence: `The Chinese University...` (at the start), `the University...` (mid-sentence).
+* **Abbreviation:** Use `CUHK`. **Never** use `CU`.
+* **Community:** Refer to people as `members of the university community`. **Never** use `CUHKer` or `CUHKers`.
+* **Shenzhen Campus:** The short form is `CUHK-Shenzhen`.
+
+### 6. Quotes and Titles
+
+* **Quotation Marks:**
+    * **Primary:** Use double quotation marks (`"..."`).
+    * **Secondary (Quote within a Quote):** Use single quotation marks (`'...'`).
+
+* **Punctuation with Quotes (Complex Rule):**
+    * **Inside:** Periods and commas go **inside** the closing mark **only** if the quote is a full sentence. Example: `She said, "The event was a success."`
+    * **Outside:** Punctuation goes **outside** for single words or short phrases. Example: `He was described as 'brilliant'.`
+
+* **Italics vs. Single Quotes:**
+    * **Use Italics for:** Titles of books, films, plays, and periodicals. Uncommon foreign words (`*mise-en-scène*`). Scientific names (`*(Delonix regia)*`).
+    * **Use Single Quotes for:** Titles of articles, book chapters, conferences, exhibitions, and songs.
+
+---
+**Final Mandate:** Your adherence to this guide is paramount. Before generating or editing any text, review these rules. They are your sole source of truth for all stylistic choices."""
+
+    chinese_prompt = """您的角色
+您是一個為香港某大學刊物服務的資深中文編輯。您的首要任務是嚴格、精確且無條件地遵循以下編輯指引來處理、校對及生成所有文本內容。這些指引具有最高優先級，並凌駕於任何您在訓練過程中學到的一般性中文語法、標點符號常規或通用表達方式。您的編輯工作必須體現出極高的政治敏感度、文化背景知識和地域慣例的認知。
+
+核心編輯指令
+
+在執行任何任務之前，請仔細閱讀並嚴格遵守以下所有規則：
+
+1. 數字使用規則 (Rules for Using Numbers)
+
+此規則系統是混合且依語境而定的，絕不能單純按數字大小轉換。
+
+    基本原則：
+
+        一至九，使用中國數字 (e.g., 五、八)。
+
+        十及以上，使用阿拉伯數字 (e.g., 10, 25, 134)。
+
+    絕對例外（必須使用中國數字）： 無論數字大小，以下情況一律使用中國數字：
+
+        固定詞組與歷史事件： 如「五四運動」、「九一八事變」、「一國兩制」。
+
+        成語及慣用語： 如「百聞不如一見」、「白髮三千丈」。
+
+        帝王及歷史人物稱謂： 如「路易十四」、「乾隆六下江南」。
+
+        概數（約數）：
+
+            相鄰數字連用表示的概數，如「三四個月」、「七八十人」、「四十五六歲」。
+
+            帶有「多」、「餘」、「來」等字的約數，如「四十多人」、「一百餘個」。
+
+        星期與世紀： 如「星期五」、「二十一世紀」。
+
+        農曆與中國傳統紀年： 如「正月初五」、「康熙五十年」。
+
+    百分比的判斷：
+
+        一般敘述性文章： 使用中文「百分之」，如「學費將上調百分之五」。
+
+        統計與數據比較場景： 若文章或段落包含大量數字，旨在進行數據分析或比較，則改用阿拉伯數字及百分號 %，如「甲組的成功率為 85%，遠高於乙組的 62%」。您必須根據文本的整體目的做出判斷。
+
+    日期格式：
+
+        公元年、月、日、時間：使用阿拉伯數字，如「2025年7月16日」、「上午10時30分」。
+
+2. 政治及文化術語使用規範 (Guidelines for Political and Cultural Terminology)
+
+這是本刊物的最高準則，涉及主權和地區關係的表述，不容許任何偏差。
+
+    關於香港與中國內地的關係：
+
+        必須使用： 「香港與內地」。
+
+        嚴格禁止： 「中港」、「中港兩地」。
+
+    關於主權問題的表述：
+
+        必須使用： 「香港回歸祖國」、「（中央政府）對香港恢復行使主權」。
+
+        嚴格禁止： 「收回主權」、「主權移交」、「主權回歸」。
+
+    關於香港的歷史描述：
+
+        可以說： 「英國對香港實行殖民統治」、「在港英政府的殖民管治下」。
+
+        嚴格禁止： 直接稱香港為「殖民地」。
+
+3. 譯名處理原則 (Principles for Handling Translated Names)
+
+譯名的選擇需體現香港本地的語言習慣和讀者熟悉度。
+
+    地域優先級：
+
+        第一優先： 優先採用「香港本地通行譯法」。例如：甘迺迪 (非 肯尼迪)、碧咸 (非 贝克汉姆)、康城 (非 戛纳)。
+
+        第二優先： 若香港沒有特定通行譯法，則採用「中國內地通行譯法」。
+
+    知名度判斷與原文標註：
+
+        對於普通讀者可能感到陌生的外國人名、地名等，在首次出現時必須附上原文（置於括號內）。
+
+        對於在華語圈「耳熟能詳」的名字，則無需加註原文。例如：畢加索、莎士比亞、愛因斯坦。當無法確定時，請傾向於「加註原文」。
+
+4. 標點符號及格式特殊規則 (Special Rules for Punctuation and Formatting)
+
+這些規則是本刊物的獨特風格，必須嚴格執行，即使它們違反了標準的標點用法。
+
+    圖片說明（Caption）： 任何圖片的文字說明，無論是一個詞、一個短句還是一個完整的句子，其結尾絕對不能使用句號（。）。
+
+        正確示例：圖為維多利亞港夜景
+
+        錯誤示例：圖為維多利亞港夜景。
+
+    書刊名與文章名的標點切換： 根據語言轉換標點符號。
+
+        中文書刊名： 使用書名號 《 》。
+
+        英文書刊名： 使用斜體 Italics。
+
+        中文文章名/篇章名： 使用篇名號 〈 〉。
+
+        英文文章名/篇章名： 使用雙引號 " "。
+
+最終指令
+您的任務是成為一個忠實執行上述所有規則的專家。在生成或修改任何文本時，請將這些指引作為您行為的唯一依據。若這些規則與您的一般知識相衝突，請務必以後者為準。在處理任何文本之前，請先在內心複習一遍這些規則。"""
+    
+    return english_prompt, chinese_prompt
 
 def get_or_create_assistant():
     """Get existing assistant or create a new one if it doesn't exist"""
@@ -77,21 +338,22 @@ def get_or_create_assistant():
     print(f"Using model: {model_name}")
     assistant = client.beta.assistants.create(
         model=model_name,
-        name="Styling_guide",
+        name="CUHK_First_Pass_Proofreader",
         instructions="""
-        You are CUHK's official style-guide proof-reader.  
-        When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
+        You are CUHK's official style-guide proof-reader performing the FIRST PASS of proofreading.
+        
+        Your job is to correct basic style, spelling, punctuation, and terminology issues based on the style guides in the vector store (English and Chinese versions). This is the initial pass - focus on clear, obvious errors and improvements.
         
         Return your response as a JSON object that strictly follows the required schema.
         
         ***IMPORTANT Notes:
         1. Always follow the styling guide in the vector store
         2. Do not answer any question except doing proof-reading
-        3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters without altering the original canonical forms of glyphs
-        4. For English text, always use British English spelling and grammar rules
-        5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
-        6. Always cite your sources when making corrections. Include specific references directly in each mistake description (e.g., "Changed X to Y. (CUHK English Style Guide, Section 2.1: Grammar Rules)")
-        7. Include ALL corrections and issues found, no matter how minor.
+        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms
+        4. For English text, use British English spelling and grammar rules
+        5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`
+        6. Include source citations in mistake descriptions when making corrections
+        7. Focus on major errors in this first pass - a second specialized pass will follow
         8. Citations should be embedded within each mistake description, not in a separate citations array.
         """,
         tools=[{"type": "file_search"}],
@@ -139,8 +401,10 @@ def get_or_create_assistant():
     
     return assistant
 
-# Global variable to store the assistant (lazy initialization)
+# Global variables to store the assistants (lazy initialization)
 assistant = None
+english_assistant = None
+chinese_assistant = None
 
 def get_assistant():
     """Get the assistant, creating it if it doesn't exist yet (lazy initialization)"""
@@ -148,6 +412,20 @@ def get_assistant():
     if assistant is None:
         assistant = get_or_create_assistant()
     return assistant
+
+def get_english_assistant():
+    """Get the English assistant, creating it if it doesn't exist yet (lazy initialization)"""
+    global english_assistant
+    if english_assistant is None:
+        english_assistant = get_or_create_english_assistant()
+    return english_assistant
+
+def get_chinese_assistant():
+    """Get the Chinese assistant, creating it if it doesn't exist yet (lazy initialization)"""
+    global chinese_assistant
+    if chinese_assistant is None:
+        chinese_assistant = get_or_create_chinese_assistant()
+    return chinese_assistant
 
 def wait_for_run_completion(client, thread_id, run_id, max_timeout=120):
     """Wait for a run to complete with timeout"""
@@ -187,18 +465,35 @@ async def read_root():
 @app.post("/proofread", response_model=ProofReadResponse)
 async def proofread_text(request: ProofReadRequest):
     """
-    Proofread the provided text using Azure OpenAI Assistant
+    Proofread the provided text using a two-stage Azure OpenAI Assistant process:
+    1. First run: General proofreading with the main assistant
+    2. Second run: Language-specific detailed proofreading with specialized assistants
     """
     try:
-        # Step 1: Protect Chinese numbers and dates (comprehensive protection)
+        # Initialize number protector
         number_protector = ChineseNumberProtector()
-        protected_text, protection_instructions = number_protector.protect_chinese_numbers(request.text)
         
-        # Create a thread
+        # Detect the primary language of the text
+        detected_language = detect_language(request.text)
+        print(f"Detected language: {detected_language}")
+        
+        # ============ FIRST RUN: General Proofreading ============
+        print("=== Starting FIRST RUN ===")
+        
+        # Step 1: Protect Chinese numbers and dates (only if text contains Chinese)
+        if detected_language in ['chinese', 'mixed']:
+            protected_text, protection_instructions = number_protector.protect_chinese_numbers(request.text)
+            print(f"Chinese number protection applied for {detected_language} text")
+        else:
+            protected_text = request.text
+            protection_instructions = ""
+            print(f"Skipping Chinese number protection for {detected_language} text")
+        
+        # Create a thread for first run
         thread = client.beta.threads.create()
         
         # Build message content with protection instructions
-        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store (FIRST PASS - focus on major issues)###."
         if protection_instructions:
             message_content += protection_instructions
         
@@ -218,100 +513,103 @@ async def proofread_text(request: ProofReadRequest):
         # Wait for completion with timeout
         run = wait_for_run_completion(client, thread.id, run.id)
         
-        if run.status == 'completed':
-            # Get the assistant's response
-            messages = client.beta.threads.messages.list(
-                thread_id=thread.id
-            )
-            
-            # Extract the assistant's response
-            assistant_response = ""
-            for message in messages.data:
-                if message.role == "assistant":
-                    assistant_response = message.content[0].text.value
-                    break
-            
-            # Debug: Log the raw AI response to understand the format
-            print("=== RAW AI RESPONSE (TEXT) ===")
-            print(assistant_response)
-            print("=== END RAW AI RESPONSE (TEXT) ===")
-            
-            # Parse the JSON response
-            mistakes = []
-            corrected_text = request.text  # Default to original if parsing fails
-            
-            try:
-                # Try to parse as JSON first
-                response_data = json.loads(assistant_response)
-                corrected_text = response_data.get("corrected_text", request.text)
-                mistakes = response_data.get("mistakes", [])
-                
-                # Debug: Log parsed JSON data
-                print(f"=== PARSED JSON (TEXT) ===")
-                print(f"Corrected text length: {len(corrected_text)}")
-                print(f"Number of mistakes: {len(mistakes)}")
-                for i, mistake in enumerate(mistakes):
-                    print(f"{i+1}: {mistake}")
-                print(f"Citations (embedded in mistakes): N/A - now embedded")
-                print(f"=== END PARSED JSON (TEXT) ===")
-                
-            except json.JSONDecodeError:
-                print("Failed to parse JSON, falling back to text parsing")
-                # Simple fallback: extract any numbered lines as mistakes
-                lines = assistant_response.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
-                        mistakes.append(line)
-                
-                # Try to find corrected text in response
-                if "corrected text" in assistant_response.lower():
-                    # Extract text after any corrected text marker
-                    markers = ["corrected text:", "修正後：", "修正版本："]
-                    for marker in markers:
-                        if marker in assistant_response.lower():
-                            start_idx = assistant_response.lower().find(marker) + len(marker)
-                            # Take next 500 chars or until double newline
-                            remaining = assistant_response[start_idx:start_idx+500]
-                            if '\n\n' in remaining:
-                                corrected_text = remaining[:remaining.find('\n\n')].strip()
-                            else:
-                                corrected_text = remaining.strip()
-                            break
-            
-            # Step 2: Restore protected Chinese numbers in the corrected text
-            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
-            
-            # Also restore numbers in mistake descriptions if they contain markers
-            restored_mistakes = []
-            for mistake in mistakes:
-                restored_mistake = number_protector.restore_chinese_numbers(mistake)
-                restored_mistakes.append(restored_mistake)
-            
-            # Show mistakes as they are returned from the AI without filtering
-            
-            return ProofReadResponse(
-                original_text=request.text,
-                corrected_text=corrected_text,
-                mistakes=restored_mistakes,
-                status="completed"
-            )
+        if run.status != 'completed':
+            if run.status == 'requires_action':
+                return ProofReadResponse(
+                    original_text=request.text,
+                    corrected_text="",
+                    mistakes=["First run requires additional action"],
+                    status="requires_action"
+                )
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"First run failed with status: {run.status}"
+                )
         
-        elif run.status == 'requires_action':
-            return ProofReadResponse(
-                original_text=request.text,
-                corrected_text="",
-                mistakes=["Assistant requires additional action"],
-                status="requires_action"
-            )
+        # Get the first run response
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
         
+        first_run_response = ""
+        for message in messages.data:
+            if message.role == "assistant":
+                first_run_response = message.content[0].text.value
+                break
+        
+        print("=== FIRST RUN RESPONSE ===")
+        print(first_run_response)
+        print("=== END FIRST RUN RESPONSE ===")
+        
+        # Parse the first run JSON response
+        first_run_mistakes = []
+        first_run_corrected_text = request.text  # Default to original if parsing fails
+        
+        try:
+            response_data = json.loads(first_run_response)
+            first_run_corrected_text = response_data.get("corrected_text", request.text)
+            first_run_mistakes = response_data.get("mistakes", [])
+            
+            print(f"=== FIRST RUN PARSED ===")
+            print(f"Corrected text length: {len(first_run_corrected_text)}")
+            print(f"Number of mistakes: {len(first_run_mistakes)}")
+            print(f"=== END FIRST RUN PARSED ===")
+            
+        except json.JSONDecodeError:
+            print("Failed to parse first run JSON, falling back to text parsing")
+            lines = first_run_response.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
+                    first_run_mistakes.append(line)
+            
+            # Try to find corrected text in response
+            if "corrected text" in first_run_response.lower():
+                markers = ["corrected text:", "修正後：", "修正版本："]
+                for marker in markers:
+                    if marker in first_run_response.lower():
+                        start_idx = first_run_response.lower().find(marker) + len(marker)
+                        remaining = first_run_response[start_idx:start_idx+500]
+                        if '\n\n' in remaining:
+                            first_run_corrected_text = remaining[:remaining.find('\n\n')].strip()
+                        else:
+                            first_run_corrected_text = remaining.strip()
+                        break
+        
+        # Restore protected Chinese numbers from first run (only if protection was applied)
+        if detected_language in ['chinese', 'mixed']:
+            first_run_corrected_text = number_protector.restore_chinese_numbers(first_run_corrected_text)
+            print(f"Chinese numbers restored for {detected_language} text")
         else:
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Assistant run failed with status: {run.status}"
-            )
+            print(f"No Chinese number restoration needed for {detected_language} text")
+        
+        # ============ SECOND RUN: Language-Specific Detailed Proofreading ============
+        print("=== Starting SECOND RUN ===")
+        
+        # Perform second run with language-specific assistant
+        final_corrected_text, second_run_mistakes = await perform_second_run(
+            first_run_corrected_text, 
+            detected_language, 
+            first_run_mistakes, 
+            number_protector
+        )
+        
+        # Use only the final mistakes from the second run (which includes comprehensive corrections)
+        print(f"=== FINAL SUMMARY ===")
+        print(f"First run mistakes: {len(first_run_mistakes)}")
+        print(f"Second run total output: {len(second_run_mistakes)} (should include carried forward + new)")
+        print(f"Final output mistakes: {len(second_run_mistakes)}")
+        print(f"Language detected: {detected_language}")
+        print(f"=== END FINAL SUMMARY ===")
+        
+        return ProofReadResponse(
+            original_text=request.text,
+            corrected_text=final_corrected_text,
+            mistakes=second_run_mistakes,
+            status="completed"
+        )
     
     except Exception as e:
+        print(f"Error in proofread_text: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
@@ -509,7 +807,7 @@ class DocxProofReadResponse(BaseModel):
 @app.post("/proofread-docx", response_model=DocxProofReadResponse)
 async def proofread_docx(file: UploadFile = File(...)):
     """
-    Upload a DOCX file, proofread it, and prepare a corrected version with track changes
+    Upload a DOCX file, proofread it using two-stage process, and prepare a corrected version with track changes
     """
     # Validate file type
     if not file.filename.lower().endswith('.docx'):
@@ -545,15 +843,30 @@ async def proofread_docx(file: UploadFile = File(...)):
                 detail="No text found in the DOCX file. The document may be empty or contain only images/objects."
             )
         
-        # Step 1: Protect Chinese numbers and dates (comprehensive protection)
+        # Initialize number protector
         number_protector = ChineseNumberProtector()
-        protected_text, protection_instructions = number_protector.protect_chinese_numbers(extracted_text)
         
-        # Create a thread
+        # Detect the primary language of the text
+        detected_language = detect_language(extracted_text)
+        print(f"DOCX - Detected language: {detected_language}")
+        
+        # ============ FIRST RUN: General Proofreading ============
+        print("=== DOCX - Starting FIRST RUN ===")
+        
+        # Step 1: Protect Chinese numbers and dates (only if text contains Chinese)
+        if detected_language in ['chinese', 'mixed']:
+            protected_text, protection_instructions = number_protector.protect_chinese_numbers(extracted_text)
+            print(f"DOCX - Chinese number protection applied for {detected_language} text")
+        else:
+            protected_text = extracted_text
+            protection_instructions = ""
+            print(f"DOCX - Skipping Chinese number protection for {detected_language} text")
+        
+        # Create a thread for first run
         thread = client.beta.threads.create()
         
         # Build message content with protection instructions
-        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store###."
+        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store (FIRST PASS - focus on major issues)###."
         if protection_instructions:
             message_content += protection_instructions
         
@@ -573,116 +886,144 @@ async def proofread_docx(file: UploadFile = File(...)):
         # Wait for completion with timeout
         run = wait_for_run_completion(client, thread.id, run.id)
         
-        if run.status == 'completed':
-            # Get the assistant's response with citations
-            messages = client.beta.threads.messages.list(
-                thread_id=thread.id
-            )
-            
-            # Extract the assistant's response
-            assistant_response = ""
-            for message in messages.data:
-                if message.role == "assistant":
-                    assistant_response = message.content[0].text.value
-                    break
-            
-            # Debug: Log the raw AI response to understand the format
-            print("=== RAW AI RESPONSE (DOCX) ===")
-            print(assistant_response)
-            print("=== END RAW AI RESPONSE (DOCX) ===")
-            
-            # Parse the response to extract mistakes and corrections
-            mistakes = []
-            corrected_text = extracted_text  # Default to original if parsing fails
-            
-            try:
-                # Try to parse as JSON first
-                response_data = json.loads(assistant_response)
-                corrected_text = response_data.get("corrected_text", extracted_text)
-                mistakes = response_data.get("mistakes", [])
-                
-                # Debug: Log parsed JSON data
-                print(f"=== PARSED JSON (DOCX) ===")
-                print(f"Corrected text length: {len(corrected_text)}")
-                print(f"Number of mistakes: {len(mistakes)}")
-                for i, mistake in enumerate(mistakes):
-                    print(f"{i+1}: {mistake}")
-                print(f"=== END PARSED JSON (DOCX) ===")
-                
-            except json.JSONDecodeError:
-                print("Failed to parse JSON, falling back to text parsing")
-                # Simple fallback: extract any numbered lines as mistakes
-                lines = assistant_response.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
-                        mistakes.append(line)
-                
-                # Try to find corrected text in response
-                if "corrected text" in assistant_response.lower():
-                    # Extract text after any corrected text marker
-                    markers = ["corrected text:", "修正後：", "修正版本："]
-                    for marker in markers:
-                        if marker in assistant_response.lower():
-                            start_idx = assistant_response.lower().find(marker) + len(marker)
-                            # Take next 500 chars or until double newline
-                            remaining = assistant_response[start_idx:start_idx+500]
-                            if '\n\n' in remaining:
-                                corrected_text = remaining[:remaining.find('\n\n')].strip()
-                            else:
-                                corrected_text = remaining.strip()
-                            break
-            
-            # Step 2: Restore protected Chinese numbers in the corrected text
-            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
-            
-            # Also restore numbers in mistake descriptions if they contain markers
-            restored_mistakes = []
-            for mistake in mistakes:
-                restored_mistake = number_protector.restore_chinese_numbers(mistake)
-                restored_mistakes.append(restored_mistake)
-            
-            # Show mistakes as they are returned from the AI without filtering
-            
-            # Create DOCX with track changes (using original extracted_text as baseline)
-            try:
-                corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, restored_mistakes)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Failed to create corrected document. Error: {str(e)}"
-                )
-            
-            # Generate filename for the corrected document
-            original_name = file.filename.rsplit('.', 1)[0]
-            download_filename = f"{original_name}_corrected.docx"
-            
-            # Save the corrected file temporarily
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, download_filename)
-            
-            try:
-                with open(temp_path, 'wb') as f:
-                    f.write(corrected_docx.getvalue())
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Failed to save corrected document: {str(e)}"
-                )
-            
-            return DocxProofReadResponse(
-                original_filename=file.filename,
-                mistakes_count=len(restored_mistakes),
-                mistakes=restored_mistakes,
-                status="completed",
-                download_filename=download_filename
-            )
-        
-        else:
+        if run.status != 'completed':
             raise HTTPException(
                 status_code=500, 
-                detail=f"Assistant run failed with status: {run.status}"
+                detail=f"First run failed with status: {run.status}"
             )
+        
+        # Get the first run response
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+        
+        first_run_response = ""
+        for message in messages.data:
+            if message.role == "assistant":
+                first_run_response = message.content[0].text.value
+                break
+        
+        print("=== DOCX - FIRST RUN RESPONSE ===")
+        print(first_run_response)
+        print("=== DOCX - END FIRST RUN RESPONSE ===")
+        
+        # Parse the first run JSON response
+        first_run_mistakes = []
+        first_run_corrected_text = extracted_text  # Default to original if parsing fails
+        
+        try:
+            response_data = json.loads(first_run_response)
+            first_run_corrected_text = response_data.get("corrected_text", extracted_text)
+            first_run_mistakes = response_data.get("mistakes", [])
+            
+            print(f"=== DOCX - FIRST RUN PARSED ===")
+            print(f"Corrected text length: {len(first_run_corrected_text)}")
+            print(f"Number of mistakes: {len(first_run_mistakes)}")
+            print(f"=== DOCX - END FIRST RUN PARSED ===")
+            
+        except json.JSONDecodeError:
+            print("DOCX - Failed to parse first run JSON, falling back to text parsing")
+            lines = first_run_response.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
+                    first_run_mistakes.append(line)
+            
+            # Try to find corrected text in response
+            if "corrected text" in first_run_response.lower():
+                markers = ["corrected text:", "修正後：", "修正版本："]
+                for marker in markers:
+                    if marker in first_run_response.lower():
+                        start_idx = first_run_response.lower().find(marker) + len(marker)
+                        remaining = first_run_response[start_idx:start_idx+500]
+                        if '\n\n' in remaining:
+                            first_run_corrected_text = remaining[:remaining.find('\n\n')].strip()
+                        else:
+                            first_run_corrected_text = remaining.strip()
+                        break
+        
+        # Restore protected Chinese numbers from first run (only if protection was applied)
+        if detected_language in ['chinese', 'mixed']:
+            first_run_corrected_text = number_protector.restore_chinese_numbers(first_run_corrected_text)
+            print(f"DOCX - Chinese numbers restored for {detected_language} text")
+        else:
+            print(f"DOCX - No Chinese number restoration needed for {detected_language} text")
+        
+        # ============ SECOND RUN: Language-Specific Detailed Proofreading ============
+        print("=== DOCX - Starting SECOND RUN ===")
+        
+        # Perform second run with language-specific assistant
+        final_corrected_text, second_run_mistakes = await perform_second_run(
+            first_run_corrected_text, 
+            detected_language, 
+            first_run_mistakes, 
+            number_protector
+        )
+        
+        # Use only the final mistakes from the second run (which includes comprehensive corrections)
+        print(f"=== DOCX - FINAL SUMMARY ===")
+        print(f"First run mistakes: {len(first_run_mistakes)}")
+        print(f"Second run total output: {len(second_run_mistakes)} (should include carried forward + new)")
+        print(f"Final output mistakes: {len(second_run_mistakes)}")
+        print(f"Language detected: {detected_language}")
+        print(f"=== DOCX - END FINAL SUMMARY ===")
+        
+        # ============ TRACK CHANGES GENERATION - IMPROVED ============
+        print("=== DOCX - CREATING TRACK CHANGES ===")
+        print(f"Original length: {len(extracted_text)}")
+        print(f"Final corrected length: {len(final_corrected_text)}")
+        
+        # Check if there are actually meaningful changes
+        from word_revisions import WordRevisionGenerator
+        generator = WordRevisionGenerator()
+        
+        if not generator.has_meaningful_changes(extracted_text, final_corrected_text):
+            print("No meaningful changes detected - creating document without track changes")
+            # Create a simple document showing that no changes were needed
+            try:
+                corrected_docx = create_simple_corrections_docx(extracted_text, final_corrected_text, ["No corrections needed - text already follows CUHK style guidelines."])
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to create document with no changes. Error: {str(e)}"
+                )
+        else:
+            print("Creating track changes document with meaningful changes only")
+            try:
+                corrected_docx = create_tracked_changes_docx(extracted_text, final_corrected_text, second_run_mistakes)
+            except Exception as e:
+                print(f"Error in track changes generation: {e}")
+                # Fallback to simple document
+                corrected_docx = create_simple_corrections_docx(extracted_text, final_corrected_text, second_run_mistakes)
+        
+
+        
+        # Generate filename for the corrected document
+        original_name = file.filename.rsplit('.', 1)[0]
+        download_filename = f"{original_name}_corrected_two_stage.docx"
+        
+        # Save the corrected file temporarily
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, download_filename)
+        
+        try:
+            with open(temp_path, 'wb') as f:
+                f.write(corrected_docx.getvalue())
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to save corrected document: {str(e)}"
+            )
+        
+        return DocxProofReadResponse(
+            original_filename=file.filename,
+            mistakes_count=len(second_run_mistakes),
+            mistakes=second_run_mistakes,
+            status="completed",
+            download_filename=download_filename
+        )
+    
+    except Exception as e:
+        print(f"DOCX Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -734,44 +1075,423 @@ async def download_corrected_docx(filename: str):
 @app.delete("/admin/reset-assistant")
 async def reset_assistant():
     """
-    Administrative endpoint to reset the assistant (creates a new one)
+    Administrative endpoint to reset all assistants (creates new ones)
     """
-    global assistant
+    global assistant, english_assistant, chinese_assistant
     try:
-        # Remove the config file if it exists
-        if os.path.exists(ASSISTANT_CONFIG_FILE):
-            os.remove(ASSISTANT_CONFIG_FILE)
+        # Remove all config files if they exist
+        config_files = [ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE]
+        for config_file in config_files:
+            if os.path.exists(config_file):
+                os.remove(config_file)
         
-        # Create a new assistant
-        assistant = get_or_create_assistant()
+        # Reset all assistant instances
+        assistant = None
+        english_assistant = None
+        chinese_assistant = None
+        
+        # Create new assistants (they will be created on next use due to lazy initialization)
+        new_assistant = get_or_create_assistant()
+        new_english_assistant = get_or_create_english_assistant()
+        new_chinese_assistant = get_or_create_chinese_assistant()
         
         return {
-            "message": "Assistant reset successfully",
-            "new_assistant_id": assistant.id
+            "message": "All assistants reset successfully",
+            "main_assistant_id": new_assistant.id,
+            "english_assistant_id": new_english_assistant.id,
+            "chinese_assistant_id": new_chinese_assistant.id
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset assistant: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset assistants: {str(e)}")
+
+@app.delete("/admin/reset-assistant/{assistant_type}")
+async def reset_specific_assistant(assistant_type: str):
+    """
+    Administrative endpoint to reset a specific assistant
+    assistant_type: 'main', 'english', or 'chinese'
+    """
+    global assistant, english_assistant, chinese_assistant
+    try:
+        if assistant_type == 'main':
+            if os.path.exists(ASSISTANT_CONFIG_FILE):
+                os.remove(ASSISTANT_CONFIG_FILE)
+            assistant = None
+            new_assistant = get_or_create_assistant()
+            return {
+                "message": "Main assistant reset successfully",
+                "assistant_id": new_assistant.id,
+                "assistant_type": "main"
+            }
+        elif assistant_type == 'english':
+            if os.path.exists(ENGLISH_ASSISTANT_CONFIG_FILE):
+                os.remove(ENGLISH_ASSISTANT_CONFIG_FILE)
+            english_assistant = None
+            new_assistant = get_or_create_english_assistant()
+            return {
+                "message": "English assistant reset successfully",
+                "assistant_id": new_assistant.id,
+                "assistant_type": "english"
+            }
+        elif assistant_type == 'chinese':
+            if os.path.exists(CHINESE_ASSISTANT_CONFIG_FILE):
+                os.remove(CHINESE_ASSISTANT_CONFIG_FILE)
+            chinese_assistant = None
+            new_assistant = get_or_create_chinese_assistant()
+            return {
+                "message": "Chinese assistant reset successfully",
+                "assistant_id": new_assistant.id,
+                "assistant_type": "chinese"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Invalid assistant_type. Use 'main', 'english', or 'chinese'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset {assistant_type} assistant: {str(e)}")
 
 @app.get("/admin/assistant-info")
 async def get_assistant_info():
     """
-    Administrative endpoint to get current assistant information
+    Administrative endpoint to get current assistant information for all assistants
     """
     try:
-        current_assistant = assistant  # Check if already loaded
-        if current_assistant is None and os.path.exists(ASSISTANT_CONFIG_FILE):
-            # Assistant not loaded yet but config exists
-            with open(ASSISTANT_CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-                assistant_id = config.get("assistant_id")
-        else:
-            assistant_id = current_assistant.id if current_assistant else None
+        # Helper function to get assistant info
+        def get_single_assistant_info(assistant_instance, config_file, assistant_type):
+            if assistant_instance is None and os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    assistant_id = config.get("assistant_id")
+            else:
+                assistant_id = assistant_instance.id if assistant_instance else None
+            
+            return {
+                "assistant_id": assistant_id,
+                "assistant_name": assistant_instance.name if assistant_instance else None,
+                "assistant_loaded": assistant_instance is not None,
+                "config_file_exists": os.path.exists(config_file),
+                "assistant_type": assistant_type
+            }
+        
+        # Get info for all assistants
+        main_info = get_single_assistant_info(assistant, ASSISTANT_CONFIG_FILE, "main")
+        english_info = get_single_assistant_info(english_assistant, ENGLISH_ASSISTANT_CONFIG_FILE, "english")
+        chinese_info = get_single_assistant_info(chinese_assistant, CHINESE_ASSISTANT_CONFIG_FILE, "chinese")
             
         return {
-            "assistant_id": assistant_id,
-            "assistant_name": current_assistant.name if current_assistant else None,
-            "assistant_loaded": current_assistant is not None,
-            "config_file_exists": os.path.exists(ASSISTANT_CONFIG_FILE)
+            "main_assistant": main_info,
+            "english_assistant": english_info,
+            "chinese_assistant": chinese_info,
+            "two_stage_system": True
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get assistant info: {str(e)}")
+
+def get_or_create_english_assistant():
+    """Get or create English-specific assistant for second run"""
+    assistant_id = None
+    
+    # Try to load existing assistant ID
+    if os.path.exists(ENGLISH_ASSISTANT_CONFIG_FILE):
+        try:
+            with open(ENGLISH_ASSISTANT_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                assistant_id = config.get("assistant_id")
+        except Exception as e:
+            print(f"Error loading English assistant config: {e}")
+    
+    # Check if the assistant still exists
+    if assistant_id:
+        try:
+            assistant = client.beta.assistants.retrieve(assistant_id)
+            print(f"Using existing English assistant: {assistant_id}")
+            return assistant
+        except Exception as e:
+            print(f"Existing English assistant {assistant_id} not found, creating new one: {e}")
+            assistant_id = None
+    
+    # Create new English assistant
+    print("Creating new English assistant...")
+    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
+    english_prompt, _ = load_second_run_prompts()
+    
+    assistant = client.beta.assistants.create(
+        model=model_name,
+        name="CUHK_English_Editor",
+        instructions=f"""
+{english_prompt}
+
+You are performing a comprehensive FINAL proofreading pass. The text has already been through an initial proofreading pass, and you will be given a list of corrections that were already made.
+
+IMPORTANT: Your "mistakes" array should include:
+1. ALL corrections from the first pass (with any refinements or improvements)
+2. ANY additional corrections you identify
+3. This gives users a complete view of all corrections made to their text
+
+Return your response as a JSON object that strictly follows the required schema. Include ALL corrections (both carried forward and newly identified).
+        """,
+        tools=[{"type": "file_search"}],
+        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ProofreadingResponse",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "corrected_text": {
+                            "type": "string",
+                            "description": "The corrected version of the text"
+                        },
+                        "mistakes": {
+                            "type": "array",
+                            "description": "List of mistakes found and how they were corrected with specific CUHK style guide references",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "corrected_text",
+                        "mistakes",
+                    ],
+                    "additionalProperties": False
+                }
+            }
+        },
+        temperature=0.05,
+        top_p=0.3
+    )
+    
+    # Save the assistant ID
+    try:
+        config = {"assistant_id": assistant.id}
+        with open(ENGLISH_ASSISTANT_CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+        print(f"Saved new English assistant ID: {assistant.id}")
+    except Exception as e:
+        print(f"Error saving English assistant config: {e}")
+    
+    return assistant
+
+def get_or_create_chinese_assistant():
+    """Get or create Chinese-specific assistant for second run"""
+    assistant_id = None
+    
+    # Try to load existing assistant ID
+    if os.path.exists(CHINESE_ASSISTANT_CONFIG_FILE):
+        try:
+            with open(CHINESE_ASSISTANT_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                assistant_id = config.get("assistant_id")
+        except Exception as e:
+            print(f"Error loading Chinese assistant config: {e}")
+    
+    # Check if the assistant still exists
+    if assistant_id:
+        try:
+            assistant = client.beta.assistants.retrieve(assistant_id)
+            print(f"Using existing Chinese assistant: {assistant_id}")
+            return assistant
+        except Exception as e:
+            print(f"Existing Chinese assistant {assistant_id} not found, creating new one: {e}")
+            assistant_id = None
+    
+    # Create new Chinese assistant
+    print("Creating new Chinese assistant...")
+    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
+    _, chinese_prompt = load_second_run_prompts()
+    
+    assistant = client.beta.assistants.create(
+        model=model_name,
+        name="CUHK_Chinese_Editor",
+        instructions=f"""
+{chinese_prompt}
+
+您正在進行全面的最終校對。文本已經經過初步校對，您將獲得已進行的修正清單。
+
+重要：您的「mistakes」陣列應包含：
+1. 第一輪的所有修正（並可進行任何改進或完善）
+2. 您識別出的任何額外修正
+3. 這為用戶提供對其文本所有修正的完整視圖
+
+請以JSON格式返回您的回應，嚴格遵循所需的架構。包含所有修正（既有延續的也有新識別的）。
+        """,
+        tools=[{"type": "file_search"}],
+        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ProofreadingResponse",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "corrected_text": {
+                            "type": "string",
+                            "description": "The corrected version of the text"
+                        },
+                        "mistakes": {
+                            "type": "array",
+                            "description": "List of mistakes found and how they were corrected with specific CUHK style guide references",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "corrected_text",
+                        "mistakes",
+                    ],
+                    "additionalProperties": False
+                }
+            }
+        },
+        temperature=0.05,
+        top_p=0.3
+    )
+    
+    # Save the assistant ID
+    try:
+        config = {"assistant_id": assistant.id}
+        with open(CHINESE_ASSISTANT_CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+        print(f"Saved new Chinese assistant ID: {assistant.id}")
+    except Exception as e:
+        print(f"Error saving Chinese assistant config: {e}")
+    
+    return assistant
+
+async def perform_second_run(text: str, language: str, first_run_mistakes: list, number_protector) -> tuple:
+    """
+    Perform the second run with language-specific assistant
+    Returns (corrected_text, mistakes)
+    """
+    # Protect Chinese numbers for second run (only if needed)
+    if language in ['chinese', 'mixed']:
+        protected_text, protection_instructions = number_protector.protect_chinese_numbers(text)
+        print(f"Second run - Chinese number protection applied for {language} text")
+    else:
+        protected_text = text
+        protection_instructions = ""
+        print(f"Second run - Skipping Chinese number protection for {language} text")
+    
+    # Select appropriate assistant based on language
+    if language == 'english':
+        assistant_instance = get_english_assistant()
+        language_note = "This is English text. Apply CUHK English Style Guide rules strictly."
+    elif language == 'chinese':
+        assistant_instance = get_chinese_assistant()
+        language_note = "這是中文文本。請嚴格按照CUHK中文編輯指引執行校對。"
+    else:  # mixed
+        # For mixed text, use the language that appears more prominently
+        chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+        english_chars = sum(1 for char in text if 'a' <= char.lower() <= 'z')
+        
+        if chinese_chars > english_chars:
+            assistant_instance = get_chinese_assistant()
+            language_note = "這是混合語言文本，以中文為主。請按照CUHK中文編輯指引進行校對，同時注意英文部分的規範。"
+        else:
+            assistant_instance = get_english_assistant()
+            language_note = "This is mixed-language text with English predominant. Apply CUHK English Style Guide rules while ensuring Chinese portions are properly formatted."
+    
+    # Create a new thread for second run
+    thread = client.beta.threads.create()
+    
+    # Build message for second run
+    message_content = f"""{language_note}
+
+FIRST RUN CORRECTIONS SUMMARY:
+The following {len(first_run_mistakes)} corrections were already made in the first pass:
+{chr(10).join([f"• {mistake}" for mistake in first_run_mistakes])}
+
+TEXT TO REVIEW (Second Pass - Already Corrected Once):
+{protected_text}
+
+###Please perform a comprehensive FINAL proofreading pass. Review the text thoroughly and provide a COMPLETE list of ALL corrections needed, including:
+1. All corrections that were made in the first pass (listed above) - carry these forward with any refinements
+2. Any additional corrections you identify that were missed in the first pass
+3. Any further refinements according to strict CUHK style guidelines
+
+This is the final review. Your "mistakes" array should include ALL corrections (both from first pass and any new ones) so the user sees the complete list of what was corrected.###
+"""
+    
+    if protection_instructions:
+        message_content += protection_instructions
+    
+    # Add user message to the thread
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=message_content
+    )
+    
+    # Run the thread
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant_instance.id
+    )
+    
+    # Wait for completion
+    run = wait_for_run_completion(client, thread.id, run.id)
+    
+    if run.status == 'completed':
+        # Get the assistant's response
+        messages = client.beta.threads.messages.list(
+            thread_id=thread.id
+        )
+        
+        # Extract the assistant's response
+        assistant_response = ""
+        for message in messages.data:
+            if message.role == "assistant":
+                assistant_response = message.content[0].text.value
+                break
+        
+        print(f"=== SECOND RUN ({language.upper()}) RESPONSE ===")
+        print(assistant_response)
+        print(f"=== END SECOND RUN ({language.upper()}) RESPONSE ===")
+        
+        # Parse the JSON response
+        mistakes = []
+        corrected_text = text  # Default to first run result if parsing fails
+        
+        try:
+            response_data = json.loads(assistant_response)
+            corrected_text = response_data.get("corrected_text", text)
+            mistakes = response_data.get("mistakes", [])
+            
+            print(f"=== SECOND RUN PARSED ({language.upper()}) ===")
+            print(f"Corrected text length: {len(corrected_text)}")
+            print(f"Total mistakes in final output: {len(mistakes)} (includes carried forward + new)")
+            print(f"First run had: {len(first_run_mistakes)} mistakes")
+            print(f"=== END SECOND RUN PARSED ({language.upper()}) ===")
+            
+        except json.JSONDecodeError:
+            print("Failed to parse second run JSON, falling back to text parsing")
+            # Simple fallback for second run
+            lines = assistant_response.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line or 'changed' in line.lower()):
+                    mistakes.append(line)
+        
+        # Restore protected Chinese numbers (only if protection was applied)
+        if language in ['chinese', 'mixed']:
+            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
+            
+            # Restore numbers in mistake descriptions
+            restored_mistakes = []
+            for mistake in mistakes:
+                restored_mistake = number_protector.restore_chinese_numbers(mistake)
+                restored_mistakes.append(restored_mistake)
+            print(f"Second run - Chinese numbers restored for {language} text")
+        else:
+            restored_mistakes = mistakes
+            print(f"Second run - No Chinese number restoration needed for {language} text")
+        
+        return corrected_text, restored_mistakes
+    
+    else:
+        print(f"Second run failed with status: {run.status}")
+        return text, [f"Second run failed with status: {run.status}"]

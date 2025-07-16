@@ -22,7 +22,7 @@ body {
     flex-direction: column;
     height: 100vh;
     background: #f0f2ff; /* Light purple/blue from image */
-    padding: 2rem; /* Add some padding around the main container */
+    padding: 1.5rem; /* Add some padding around the main container */
 }
 
 .main-wrapper {

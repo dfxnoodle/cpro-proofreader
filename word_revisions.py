@@ -51,10 +51,26 @@ class WordRevisionGenerator:
         # Generate word-level differences
         changes = self._generate_word_diff(original_text, corrected_text)
         
+        # Filter out minor changes
+        filtered_changes = []
+        for change_type, text in changes:
+            if not self.should_ignore_change(change_type, text):
+                filtered_changes.append((change_type, text))
+            else:
+                # Convert ignored deletions/insertions to unchanged text
+                if change_type == 'delete':
+                    # If we're ignoring a deletion, don't show it as deleted
+                    filtered_changes.append(('equal', text))
+                elif change_type == 'insert':
+                    # If we're ignoring an insertion, show it as normal text
+                    filtered_changes.append(('equal', text))
+                else:
+                    filtered_changes.append((change_type, text))
+        
         # Create paragraph with proper Word track changes
         para = doc.add_paragraph()
         
-        for change_type, text in changes:
+        for change_type, text in filtered_changes:
             if change_type == 'equal':
                 # Unchanged text - add normally
                 para.add_run(text)
@@ -100,6 +116,58 @@ class WordRevisionGenerator:
         
         return doc_bytes
     
+    def has_meaningful_changes(self, original_text: str, corrected_text: str) -> bool:
+        """
+        Check if there are meaningful changes between original and corrected text.
+        
+        Args:
+            original_text: Original text
+            corrected_text: Corrected text
+            
+        Returns:
+            True if there are meaningful changes worth showing in track changes
+        """
+        # Quick check for identical text
+        if original_text.strip() == corrected_text.strip():
+            return False
+        
+        # Generate differences and check if any are meaningful
+        changes = self._generate_word_diff(original_text, corrected_text)
+        
+        for change_type, text in changes:
+            if change_type in ['delete', 'insert']:
+                # If this change wouldn't be ignored, it's meaningful
+                if not self.should_ignore_change(change_type, text):
+                    return True
+        
+        return False
+
+    def should_ignore_change(self, change_type: str, text: str) -> bool:
+        """
+        Determine if a change should be ignored (not shown in track changes).
+        Returns True if the change is too minor to show.
+        
+        Args:
+            change_type: Type of change ('delete', 'insert', 'equal')
+            text: The text content of the change
+            
+        Returns:
+            True if change should be ignored
+        """
+        if change_type == 'equal':
+            return False  # Never ignore unchanged text
+        
+        # Ignore pure whitespace changes that are very small
+        if not text.strip():
+            # Only ignore very minor whitespace changes (1-2 characters)
+            return len(text) <= 2
+        
+        # Ignore single character punctuation or spacing changes that don't add meaning
+        if len(text.strip()) == 1 and text.strip() in '.,;: \t\n':
+            return True
+        
+        return False
+
     def _generate_word_diff(self, original: str, corrected: str) -> List[Tuple[str, str]]:
         """
         Generate differences between original and corrected text using intelligent approach.
