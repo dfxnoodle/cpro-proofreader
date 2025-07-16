@@ -1208,3 +1208,291 @@ body {
     margin: 0;
     font-weight: 400;
 }
+
+/* Mobile Responsive Styles */
+@media screen and (max-width: 768px) {
+    /* Make body scrollable */
+    body {
+        overflow: auto;
+        height: auto;
+        min-height: 100vh;
+    }
+    
+    /* Reduce container padding and make it scrollable */
+    .container {
+        padding: 0.25rem;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+    }
+    
+    /* Stack layout vertically on mobile */
+    .main-wrapper {
+        flex-direction: column;
+        border-radius: 8px;
+        height: auto;
+        overflow: visible;
+    }
+    
+    /* Sidebar adjustments */
+    .sidebar {
+        width: 100%;
+        padding: 1rem;
+        border-right: none;
+        border-bottom: 1px solid #e2e8f0;
+        order: 1;
+        overflow-y: visible;
+        height: auto;
+        flex-shrink: 0;
+    }
+    
+    /* Reduce logo section spacing */
+    .logo-section {
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    /* Main header adjustments */
+    .main-header {
+        padding: 1rem 1rem 0.5rem;
+    }
+    
+    .main-title {
+        font-size: 1.25rem;
+    }
+    
+    /* Main content adjustments */
+    .main-content {
+        order: 2;
+        height: auto;
+        min-height: auto;
+        overflow: visible;
+        flex-shrink: 0;
+    }
+    
+    /* Results section adjustments */
+    .results-section {
+        padding: 0 1rem 1rem;
+        overflow-y: visible;
+        height: auto;
+        flex: none;
+    }
+    
+    /* Make comparison section stack vertically */
+    .comparison-section {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    /* Text input adjustments */
+    .text-input {
+        min-height: 120px;
+        max-height: 200px;
+        padding: 0.75rem;
+    }
+    
+    /* File upload area adjustments */
+    .file-upload-area {
+        padding: 1.5rem 1rem;
+    }
+    
+    /* Button adjustments */
+    .primary-button,
+    .copy-btn,
+    .export-btn,
+    .download-btn {
+        font-size: 0.8rem;
+        padding: 0.75rem 1rem;
+    }
+    
+    /* Issues section adjustments */
+    .issues-section {
+        padding: 0.75rem;
+        margin-top: 1rem;
+    }
+    
+    .issues-list li {
+        padding: 0.75rem;
+        padding-left: 2.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    .issues-list li::before {
+        width: 20px;
+        height: 20px;
+        font-size: 0.7rem;
+        left: 0.75rem;
+    }
+    
+    /* Issue source buttons */
+    .issue-source-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        margin: 0.125rem 0.25rem 0.125rem 0;
+    }
+    
+    /* Error modal adjustments */
+    .error-modal .error-content {
+        width: 95%;
+        margin: 1rem;
+    }
+    
+    .error-header,
+    .error-body,
+    .error-footer {
+        padding: 1rem;
+    }
+    
+    /* Welcome state adjustments */
+    .welcome-state {
+        padding: 1rem;
+        height: auto;
+        min-height: 50vh;
+        flex: none;
+    }
+    
+    .welcome-content {
+        max-width: 100%;
+    }
+    
+    .welcome-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+    
+    .welcome-content h2 {
+        font-size: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    .welcome-content p {
+        font-size: 0.9rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Loading state adjustments */
+    .loading-state {
+        padding: 1rem;
+        height: auto;
+        min-height: 50vh;
+        flex: none;
+    }
+    
+    .loading-content {
+        padding: 2rem 1.5rem;
+    }
+    
+    .loading-content h2 {
+        font-size: 1.25rem;
+    }
+    
+    .loading-content p {
+        font-size: 0.9rem;
+    }
+    
+    /* Download section adjustments */
+    .download-section {
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: stretch;
+    }
+    
+    .download-section .clear-result-btn {
+        margin: 0;
+    }
+    
+    /* Footer adjustments */
+    .footer-text {
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    /* Extra small mobile devices */
+    body {
+        overflow: auto;
+        height: auto;
+        min-height: 100vh;
+    }
+    
+    .container {
+        padding: 0.25rem;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+    }
+    
+    .main-wrapper {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .sidebar {
+        padding: 0.75rem;
+        height: auto;
+        overflow-y: visible;
+    }
+    
+    .main-header {
+        padding: 0.75rem 0.75rem 0.25rem;
+    }
+    
+    .main-title {
+        font-size: 1.1rem;
+    }
+    
+    .main-content {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .results-section {
+        padding: 0 0.75rem 0.75rem;
+        overflow-y: visible;
+        height: auto;
+        flex: none;
+    }
+    
+    .text-input {
+        min-height: 100px;
+        max-height: 150px;
+        font-size: 0.8rem;
+    }
+    
+    .comparison-section {
+        gap: 0.75rem;
+    }
+    
+    .text-content {
+        padding: 1rem;
+        font-size: 0.8rem;
+    }
+    
+    .column-header {
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .column-header h3 {
+        font-size: 0.8rem;
+    }
+    
+    .issues-section {
+        padding: 0.5rem;
+    }
+    
+    .issues-list li {
+        padding: 0.5rem;
+        padding-left: 2rem;
+        font-size: 0.75rem;
+    }
+    
+    .issues-list li::before {
+        width: 18px;
+        height: 18px;
+        font-size: 0.65rem;
+        left: 0.5rem;
+    }
+}

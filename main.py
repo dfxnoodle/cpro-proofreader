@@ -82,27 +82,48 @@ def get_or_create_assistant():
         You are CUHK's official style-guide proof-reader.  
         When the user sends a passage of text, do **one job only**: correct its style, spelling, punctuation, and terminology so that it complies with the style guides stored in the vector store (English and Chinese versions).
         
-        Return your response as a JSON object with the following structure:
-        {
-            "corrected_text": "The corrected version of the text",
-            "mistakes": ["List of mistakes found and how they were corrected with style guide references included"],
-            "citations": []
-        }
+        Return your response as a JSON object that strictly follows the required schema.
         
         ***IMPORTANT Notes:
         1. Always follow the styling guide in the vector store
         2. Do not answer any question except doing proof-reading
-        3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters
+        3. For Chinese text, always make sure the output content is in Chinese with traditional Chinese characters without altering the original canonical forms of glyphs
         4. For English text, always use British English spelling and grammar rules
         5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`.  Always rely on those chunks for authoritative guidance.
         6. Always cite your sources when making corrections. Include specific references directly in each mistake description (e.g., "Changed X to Y. (CUHK English Style Guide, Section 2.1: Grammar Rules)")
         7. Include ALL corrections and issues found, no matter how minor.
-        8. For Chinese text, list each correction separately in the mistakes array.
-        9. Citations should be embedded within each mistake description, not in a separate citations array.
+        8. Citations should be embedded within each mistake description, not in a separate citations array.
         """,
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
-        response_format={"type": "json_object"},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ProofreadingResponse",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "corrected_text": {
+                            "type": "string",
+                            "description": "The corrected version of the text"
+                        },
+                        "mistakes": {
+                            "type": "array",
+                            "description": "List of mistakes found and how they were corrected with style guide references included (with original quotes)",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "corrected_text",
+                        "mistakes",
+                    ],
+                    "additionalProperties": False
+                }
+            }
+        },
         temperature=0.1,
         top_p=0.5
     )
