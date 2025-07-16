@@ -244,7 +244,7 @@ You are a Senior Editor for the official publications of The Chinese University 
 
     日期格式：
 
-        公元年、月、日、時間：使用阿拉伯數字，如「2025年7月16日」、「上午10時30分」。
+        公元年、月、日、時間：使用阿拉伯數字，如「2025年7月16日」、「上午10時30分」。不用二零零七年七月八日晚上十時三十分；今年 3 月，不用今年三月。
 
 2. 政治及文化術語使用規範 (Guidelines for Political and Cultural Terminology)
 
@@ -1367,14 +1367,11 @@ async def perform_second_run(text: str, language: str, first_run_mistakes: list,
     Perform the second run with language-specific assistant
     Returns (corrected_text, mistakes)
     """
-    # Protect Chinese numbers for second run (only if needed)
-    if language in ['chinese', 'mixed']:
-        protected_text, protection_instructions = number_protector.protect_chinese_numbers(text)
-        print(f"Second run - Chinese number protection applied for {language} text")
-    else:
-        protected_text = text
-        protection_instructions = ""
-        print(f"Second run - Skipping Chinese number protection for {language} text")
+    # DISABLED: Skip pattern protection for second run to allow better corrections
+    # Pattern protection is only applied in the first run for basic safety
+    protected_text = text
+    protection_instructions = ""
+    print(f"Second run - Pattern protection DISABLED for better correction results ({language} text)")
     
     # Select appropriate assistant based on language
     if language == 'english':
@@ -1416,8 +1413,7 @@ TEXT TO REVIEW (Second Pass - Already Corrected Once):
 This is the final review. Your "mistakes" array should include ALL corrections (both from first pass and any new ones) so the user sees the complete list of what was corrected.###
 """
     
-    if protection_instructions:
-        message_content += protection_instructions
+    # Note: Protection instructions are disabled for second run to allow better corrections
     
     # Add user message to the thread
     message = client.beta.threads.messages.create(
@@ -1476,19 +1472,9 @@ This is the final review. Your "mistakes" array should include ALL corrections (
                 if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line or 'changed' in line.lower()):
                     mistakes.append(line)
         
-        # Restore protected Chinese numbers (only if protection was applied)
-        if language in ['chinese', 'mixed']:
-            corrected_text = number_protector.restore_chinese_numbers(corrected_text)
-            
-            # Restore numbers in mistake descriptions
-            restored_mistakes = []
-            for mistake in mistakes:
-                restored_mistake = number_protector.restore_chinese_numbers(mistake)
-                restored_mistakes.append(restored_mistake)
-            print(f"Second run - Chinese numbers restored for {language} text")
-        else:
-            restored_mistakes = mistakes
-            print(f"Second run - No Chinese number restoration needed for {language} text")
+        # Pattern protection was disabled for second run - no restoration needed
+        restored_mistakes = mistakes
+        print(f"Second run - No pattern restoration needed (protection was disabled for better results)")
         
         return corrected_text, restored_mistakes
     
