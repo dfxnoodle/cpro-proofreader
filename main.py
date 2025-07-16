@@ -353,26 +353,151 @@ async def export_to_word(request: ExportToWordRequest):
         raise HTTPException(status_code=500, detail=f"Failed to create Word document: {str(e)}")
 
 def extract_text_from_docx(file_content: bytes) -> str:
-    """Extract text from DOCX file with proper spacing preservation"""
+    """Extract text from DOCX file with proper spacing preservation, including tables"""
     try:
         doc = Document(BytesIO(file_content))
         text_content = []
         
-        for paragraph in doc.paragraphs:
-            # Simply use paragraph.text which should preserve the original spacing
-            # The issue might be elsewhere in the pipeline
-            paragraph_text = paragraph.text.strip()
+        # Process document elements in order (paragraphs and tables)
+        for element in doc.element.body:
+            if element.tag.endswith('}p'):  # Paragraph
+                # Find corresponding paragraph object
+                for para in doc.paragraphs:
+                    if para._element == element:
+                        paragraph_text = para.text.strip()
+                        if paragraph_text:
+                            text_content.append(paragraph_text)
+                        break
             
-            if paragraph_text:
-                text_content.append(paragraph_text)
+            elif element.tag.endswith('}tbl'):  # Table
+                # Find corresponding table object
+                for table in doc.tables:
+                    if table._element == element:
+                        table_text = extract_table_text(table)
+                        if table_text:
+                            text_content.append(table_text)
+                        break
         
         return '\n'.join(text_content)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading DOCX file: {str(e)}")
+        # Fallback to simple paragraph extraction if the advanced method fails
+        try:
+            doc = Document(BytesIO(file_content))
+            text_content = []
+            
+            # Extract paragraphs
+            for paragraph in doc.paragraphs:
+                paragraph_text = paragraph.text.strip()
+                if paragraph_text:
+                    text_content.append(paragraph_text)
+            
+            # Extract tables
+            for table in doc.tables:
+                table_text = extract_table_text(table)
+                if table_text:
+                    text_content.append(table_text)
+            
+            return '\n'.join(text_content)
+        except Exception as fallback_e:
+            raise HTTPException(status_code=400, detail=f"Error reading DOCX file: {str(e)}. Fallback error: {str(fallback_e)}")
+
+def extract_table_text(table) -> str:
+    """Extract text from a DOCX table with proper formatting"""
+    try:
+        table_content = []
+        
+        for row in table.rows:
+            row_content = []
+            for cell in row.cells:
+                # Extract text from all paragraphs in the cell
+                cell_paragraphs = []
+                for paragraph in cell.paragraphs:
+                    para_text = paragraph.text.strip()
+                    if para_text:
+                        cell_paragraphs.append(para_text)
+                
+                # Join paragraphs within a cell with space
+                cell_text = ' '.join(cell_paragraphs) if cell_paragraphs else ""
+                row_content.append(cell_text)
+            
+            # Join cells in a row with tab character for better structure
+            if any(cell.strip() for cell in row_content):  # Only add non-empty rows
+                table_content.append('\t'.join(row_content))
+        
+        # Join rows with newlines
+        return '\n'.join(table_content)
+    except Exception as e:
+        # If table extraction fails, return empty string to avoid breaking the whole process
+        print(f"Warning: Failed to extract table text: {str(e)}")
+        return ""
 
 def create_tracked_changes_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
     """Create a DOCX file with proper Word track changes"""
-    return create_word_track_changes_docx(original_text, corrected_text, mistakes)
+    try:
+        return create_word_track_changes_docx(original_text, corrected_text, mistakes)
+    except Exception as e:
+        # If the advanced track changes fail, create a simple document with corrections
+        print(f"Warning: Advanced track changes failed, creating simple document: {str(e)}")
+        return create_simple_corrections_docx(original_text, corrected_text, mistakes)
+
+def create_simple_corrections_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
+    """Create a simple DOCX file with corrections when track changes fail"""
+    try:
+        doc = Document()
+        
+        # Add title
+        title = doc.add_heading("Document Corrections", level=1)
+        
+        # Add original text section
+        doc.add_heading("Original Text:", level=2)
+        original_para = doc.add_paragraph(original_text)
+        
+        # Add corrected text section
+        doc.add_heading("Corrected Text:", level=2)
+        corrected_para = doc.add_paragraph(corrected_text)
+        # Highlight corrected text in green
+        for run in corrected_para.runs:
+            run.font.color.rgb = RGBColor(0, 128, 0)  # Green color
+        
+        # Add mistakes section
+        if mistakes:
+            doc.add_heading("Corrections Made:", level=2)
+            for i, mistake in enumerate(mistakes, 1):
+                mistake_para = doc.add_paragraph(f"{i}. {mistake}")
+        
+        # Save to BytesIO
+        doc_bytes = BytesIO()
+        doc.save(doc_bytes)
+        doc_bytes.seek(0)
+        
+        return doc_bytes
+    except Exception as e:
+        # Last resort: create minimal document
+        print(f"Warning: Simple document creation failed, creating minimal document: {str(e)}")
+        return create_minimal_docx(original_text, corrected_text, mistakes)
+
+def create_minimal_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
+    """Create a minimal DOCX file as last resort"""
+    try:
+        doc = Document()
+        doc.add_paragraph("Document Corrections")
+        doc.add_paragraph("Original Text:")
+        doc.add_paragraph(original_text)
+        doc.add_paragraph("Corrected Text:")
+        doc.add_paragraph(corrected_text)
+        
+        if mistakes:
+            doc.add_paragraph("Corrections:")
+            for mistake in mistakes:
+                doc.add_paragraph(f"• {mistake}")
+        
+        doc_bytes = BytesIO()
+        doc.save(doc_bytes)
+        doc_bytes.seek(0)
+        
+        return doc_bytes
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create any document format: {str(e)}")
 
 class DocxProofReadResponse(BaseModel):
     original_filename: str
@@ -394,11 +519,31 @@ async def proofread_docx(file: UploadFile = File(...)):
         # Read the uploaded file
         file_content = await file.read()
         
-        # Extract text from DOCX
-        extracted_text = extract_text_from_docx(file_content)
+        # Validate file size (limit to 50MB)
+        if len(file_content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 50MB.")
+        
+        # Validate that the file is actually a valid DOCX
+        if not file_content.startswith(b'PK'):
+            raise HTTPException(status_code=400, detail="Invalid DOCX file format.")
+        
+        # Extract text from DOCX with improved error handling
+        try:
+            extracted_text = extract_text_from_docx(file_content)
+        except HTTPException:
+            # Re-raise HTTP exceptions as they already have proper error messages
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Failed to extract text from DOCX file. The file may be corrupted or contain unsupported elements: {str(e)}"
+            )
         
         if not extracted_text.strip():
-            raise HTTPException(status_code=400, detail="No text found in the DOCX file")
+            raise HTTPException(
+                status_code=400, 
+                detail="No text found in the DOCX file. The document may be empty or contain only images/objects."
+            )
         
         # Step 1: Protect Chinese numbers and dates (comprehensive protection)
         number_protector = ChineseNumberProtector()
@@ -500,7 +645,13 @@ async def proofread_docx(file: UploadFile = File(...)):
             # Show mistakes as they are returned from the AI without filtering
             
             # Create DOCX with track changes (using original extracted_text as baseline)
-            corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, restored_mistakes)
+            try:
+                corrected_docx = create_tracked_changes_docx(extracted_text, corrected_text, restored_mistakes)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to create corrected document. Error: {str(e)}"
+                )
             
             # Generate filename for the corrected document
             original_name = file.filename.rsplit('.', 1)[0]
@@ -510,8 +661,14 @@ async def proofread_docx(file: UploadFile = File(...)):
             temp_dir = tempfile.gettempdir()
             temp_path = os.path.join(temp_dir, download_filename)
             
-            with open(temp_path, 'wb') as f:
-                f.write(corrected_docx.getvalue())
+            try:
+                with open(temp_path, 'wb') as f:
+                    f.write(corrected_docx.getvalue())
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to save corrected document: {str(e)}"
+                )
             
             return DocxProofReadResponse(
                 original_filename=file.filename,
