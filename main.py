@@ -2,23 +2,20 @@ import os
 import json
 import time
 import tempfile
-import re
-from typing import Optional
 from io import BytesIO
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from openai import AzureOpenAI
 from dotenv import load_dotenv
 from docx import Document
 from docx.shared import RGBColor
-from docx.enum.text import WD_COLOR_INDEX
 from word_revisions import create_word_track_changes_docx
 from text_preprocessor import ChineseNumberProtector
-import xml.etree.ElementTree as ET
+from config import client, ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE
+from admin_routes import admin_router
 
 # Load environment variables
 load_dotenv()
@@ -38,17 +35,8 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/styling_guides", StaticFiles(directory="styling_guides"), name="styling_guides")
 
-# Initialize Azure OpenAI client
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-05-01-preview"
-)
-
-# Assistant configuration
-ASSISTANT_CONFIG_FILE = "assistant_config.json"
-ENGLISH_ASSISTANT_CONFIG_FILE = "english_assistant_config.json"
-CHINESE_ASSISTANT_CONFIG_FILE = "chinese_assistant_config.json"
+# Include admin routes
+app.include_router(admin_router)
 
 def detect_language(text: str) -> str:
     """
@@ -1071,120 +1059,6 @@ async def download_corrected_docx(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=filename
     )
-
-@app.delete("/admin/reset-assistant")
-async def reset_assistant():
-    """
-    Administrative endpoint to reset all assistants (creates new ones)
-    """
-    global assistant, english_assistant, chinese_assistant
-    try:
-        # Remove all config files if they exist
-        config_files = [ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE]
-        for config_file in config_files:
-            if os.path.exists(config_file):
-                os.remove(config_file)
-        
-        # Reset all assistant instances
-        assistant = None
-        english_assistant = None
-        chinese_assistant = None
-        
-        # Create new assistants (they will be created on next use due to lazy initialization)
-        new_assistant = get_or_create_assistant()
-        new_english_assistant = get_or_create_english_assistant()
-        new_chinese_assistant = get_or_create_chinese_assistant()
-        
-        return {
-            "message": "All assistants reset successfully",
-            "main_assistant_id": new_assistant.id,
-            "english_assistant_id": new_english_assistant.id,
-            "chinese_assistant_id": new_chinese_assistant.id
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset assistants: {str(e)}")
-
-@app.delete("/admin/reset-assistant/{assistant_type}")
-async def reset_specific_assistant(assistant_type: str):
-    """
-    Administrative endpoint to reset a specific assistant
-    assistant_type: 'main', 'english', or 'chinese'
-    """
-    global assistant, english_assistant, chinese_assistant
-    try:
-        if assistant_type == 'main':
-            if os.path.exists(ASSISTANT_CONFIG_FILE):
-                os.remove(ASSISTANT_CONFIG_FILE)
-            assistant = None
-            new_assistant = get_or_create_assistant()
-            return {
-                "message": "Main assistant reset successfully",
-                "assistant_id": new_assistant.id,
-                "assistant_type": "main"
-            }
-        elif assistant_type == 'english':
-            if os.path.exists(ENGLISH_ASSISTANT_CONFIG_FILE):
-                os.remove(ENGLISH_ASSISTANT_CONFIG_FILE)
-            english_assistant = None
-            new_assistant = get_or_create_english_assistant()
-            return {
-                "message": "English assistant reset successfully",
-                "assistant_id": new_assistant.id,
-                "assistant_type": "english"
-            }
-        elif assistant_type == 'chinese':
-            if os.path.exists(CHINESE_ASSISTANT_CONFIG_FILE):
-                os.remove(CHINESE_ASSISTANT_CONFIG_FILE)
-            chinese_assistant = None
-            new_assistant = get_or_create_chinese_assistant()
-            return {
-                "message": "Chinese assistant reset successfully",
-                "assistant_id": new_assistant.id,
-                "assistant_type": "chinese"
-            }
-        else:
-            raise HTTPException(status_code=400, detail="Invalid assistant_type. Use 'main', 'english', or 'chinese'")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset {assistant_type} assistant: {str(e)}")
-
-@app.get("/admin/assistant-info")
-async def get_assistant_info():
-    """
-    Administrative endpoint to get current assistant information for all assistants
-    """
-    try:
-        # Helper function to get assistant info
-        def get_single_assistant_info(assistant_instance, config_file, assistant_type):
-            if assistant_instance is None and os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                    assistant_id = config.get("assistant_id")
-            else:
-                assistant_id = assistant_instance.id if assistant_instance else None
-            
-            return {
-                "assistant_id": assistant_id,
-                "assistant_name": assistant_instance.name if assistant_instance else None,
-                "assistant_loaded": assistant_instance is not None,
-                "config_file_exists": os.path.exists(config_file),
-                "assistant_type": assistant_type
-            }
-        
-        # Get info for all assistants
-        main_info = get_single_assistant_info(assistant, ASSISTANT_CONFIG_FILE, "main")
-        english_info = get_single_assistant_info(english_assistant, ENGLISH_ASSISTANT_CONFIG_FILE, "english")
-        chinese_info = get_single_assistant_info(chinese_assistant, CHINESE_ASSISTANT_CONFIG_FILE, "chinese")
-            
-        return {
-            "main_assistant": main_info,
-            "english_assistant": english_info,
-            "chinese_assistant": chinese_info,
-            "two_stage_system": True
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get assistant info: {str(e)}")
 
 def get_or_create_english_assistant():
     """Get or create English-specific assistant for second run"""
