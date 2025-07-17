@@ -16,6 +16,7 @@ from word_revisions import create_word_track_changes_docx
 from text_preprocessor import ChineseNumberProtector
 from config import client, ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE
 from admin_routes import admin_router
+from utils import parse_assistant_response, clean_response_text
 
 # Load environment variables
 load_dotenv()
@@ -521,47 +522,35 @@ async def proofread_text(request: ProofReadRequest):
         first_run_response = ""
         for message in messages.data:
             if message.role == "assistant":
-                first_run_response = message.content[0].text.value
-                break
+                try:
+                    first_run_response = message.content[0].text.value
+                    break
+                except (IndexError, AttributeError) as e:
+                    print(f"Warning: Error extracting message content: {e}")
+                    continue
+        
+        # Validate that we got a response
+        if not first_run_response.strip():
+            raise HTTPException(
+                status_code=500, 
+                detail="Empty response from AI assistant in first run"
+            )
         
         print("=== FIRST RUN RESPONSE ===")
         print(first_run_response)
         print("=== END FIRST RUN RESPONSE ===")
         
-        # Parse the first run JSON response
-        first_run_mistakes = []
-        first_run_corrected_text = request.text  # Default to original if parsing fails
+        # Parse the first run response with robust error handling
+        first_run_corrected_text, first_run_mistakes = parse_assistant_response(
+            clean_response_text(first_run_response), 
+            request.text
+        )
         
-        try:
-            response_data = json.loads(first_run_response)
-            first_run_corrected_text = response_data.get("corrected_text", request.text)
-            first_run_mistakes = response_data.get("mistakes", [])
-            
-            print(f"=== FIRST RUN PARSED ===")
-            print(f"Corrected text length: {len(first_run_corrected_text)}")
-            print(f"Number of mistakes: {len(first_run_mistakes)}")
-            print(f"=== END FIRST RUN PARSED ===")
-            
-        except json.JSONDecodeError:
-            print("Failed to parse first run JSON, falling back to text parsing")
-            lines = first_run_response.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
-                    first_run_mistakes.append(line)
-            
-            # Try to find corrected text in response
-            if "corrected text" in first_run_response.lower():
-                markers = ["corrected text:", "修正後：", "修正版本："]
-                for marker in markers:
-                    if marker in first_run_response.lower():
-                        start_idx = first_run_response.lower().find(marker) + len(marker)
-                        remaining = first_run_response[start_idx:start_idx+500]
-                        if '\n\n' in remaining:
-                            first_run_corrected_text = remaining[:remaining.find('\n\n')].strip()
-                        else:
-                            first_run_corrected_text = remaining.strip()
-                        break
+        print(f"=== FIRST RUN PARSED ===")
+        print(f"Corrected text length: {len(first_run_corrected_text)}")
+        print(f"Number of mistakes: {len(first_run_mistakes)}")
+        print(f"=== END FIRST RUN PARSED ===")
+        
         
         # Restore protected Chinese numbers from first run (only if protection was applied)
         if detected_language in ['chinese', 'mixed']:
@@ -886,47 +875,35 @@ async def proofread_docx(file: UploadFile = File(...)):
         first_run_response = ""
         for message in messages.data:
             if message.role == "assistant":
-                first_run_response = message.content[0].text.value
-                break
+                try:
+                    first_run_response = message.content[0].text.value
+                    break
+                except (IndexError, AttributeError) as e:
+                    print(f"Warning: Error extracting DOCX message content: {e}")
+                    continue
+        
+        # Validate that we got a response
+        if not first_run_response.strip():
+            raise HTTPException(
+                status_code=500, 
+                detail="Empty response from AI assistant in DOCX first run"
+            )
         
         print("=== DOCX - FIRST RUN RESPONSE ===")
         print(first_run_response)
         print("=== DOCX - END FIRST RUN RESPONSE ===")
         
-        # Parse the first run JSON response
-        first_run_mistakes = []
-        first_run_corrected_text = extracted_text  # Default to original if parsing fails
+        # Parse the first run response with robust error handling
+        first_run_corrected_text, first_run_mistakes = parse_assistant_response(
+            clean_response_text(first_run_response), 
+            extracted_text
+        )
         
-        try:
-            response_data = json.loads(first_run_response)
-            first_run_corrected_text = response_data.get("corrected_text", extracted_text)
-            first_run_mistakes = response_data.get("mistakes", [])
-            
-            print(f"=== DOCX - FIRST RUN PARSED ===")
-            print(f"Corrected text length: {len(first_run_corrected_text)}")
-            print(f"Number of mistakes: {len(first_run_mistakes)}")
-            print(f"=== DOCX - END FIRST RUN PARSED ===")
-            
-        except json.JSONDecodeError:
-            print("DOCX - Failed to parse first run JSON, falling back to text parsing")
-            lines = first_run_response.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line):
-                    first_run_mistakes.append(line)
-            
-            # Try to find corrected text in response
-            if "corrected text" in first_run_response.lower():
-                markers = ["corrected text:", "修正後：", "修正版本："]
-                for marker in markers:
-                    if marker in first_run_response.lower():
-                        start_idx = first_run_response.lower().find(marker) + len(marker)
-                        remaining = first_run_response[start_idx:start_idx+500]
-                        if '\n\n' in remaining:
-                            first_run_corrected_text = remaining[:remaining.find('\n\n')].strip()
-                        else:
-                            first_run_corrected_text = remaining.strip()
-                        break
+        print(f"=== DOCX - FIRST RUN PARSED ===")
+        print(f"Corrected text length: {len(first_run_corrected_text)}")
+        print(f"Number of mistakes: {len(first_run_mistakes)}")
+        print(f"=== DOCX - END FIRST RUN PARSED ===")
+        
         
         # Restore protected Chinese numbers from first run (only if protection was applied)
         if detected_language in ['chinese', 'mixed']:
@@ -1315,36 +1292,34 @@ This is the final review. Your "mistakes" array should include ALL corrections (
         assistant_response = ""
         for message in messages.data:
             if message.role == "assistant":
-                assistant_response = message.content[0].text.value
-                break
+                try:
+                    assistant_response = message.content[0].text.value
+                    break
+                except (IndexError, AttributeError) as e:
+                    print(f"Warning: Error extracting second run message content: {e}")
+                    continue
+        
+        # Validate that we got a response
+        if not assistant_response.strip():
+            print("Empty response from second run assistant")
+            return text, [f"Second run returned empty response"]
         
         print(f"=== SECOND RUN ({language.upper()}) RESPONSE ===")
         print(assistant_response)
         print(f"=== END SECOND RUN ({language.upper()}) RESPONSE ===")
         
-        # Parse the JSON response
-        mistakes = []
-        corrected_text = text  # Default to first run result if parsing fails
+        # Parse the second run response with robust error handling
+        corrected_text, mistakes = parse_assistant_response(
+            clean_response_text(assistant_response), 
+            text
+        )
         
-        try:
-            response_data = json.loads(assistant_response)
-            corrected_text = response_data.get("corrected_text", text)
-            mistakes = response_data.get("mistakes", [])
-            
-            print(f"=== SECOND RUN PARSED ({language.upper()}) ===")
-            print(f"Corrected text length: {len(corrected_text)}")
-            print(f"Total mistakes in final output: {len(mistakes)} (includes carried forward + new)")
-            print(f"First run had: {len(first_run_mistakes)} mistakes")
-            print(f"=== END SECOND RUN PARSED ({language.upper()}) ===")
-            
-        except json.JSONDecodeError:
-            print("Failed to parse second run JSON, falling back to text parsing")
-            # Simple fallback for second run
-            lines = assistant_response.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and (line[0].isdigit() or '錯誤' in line or '修正' in line or '改為' in line or 'changed' in line.lower()):
-                    mistakes.append(line)
+        print(f"=== SECOND RUN PARSED ({language.upper()}) ===")
+        print(f"Corrected text length: {len(corrected_text)}")
+        print(f"Total mistakes in final output: {len(mistakes)} (includes carried forward + new)")
+        print(f"First run had: {len(first_run_mistakes)} mistakes")
+        print(f"=== END SECOND RUN PARSED ({language.upper()}) ===")
+        
         
         # Pattern protection was disabled for second run - no restoration needed
         restored_mistakes = mistakes
