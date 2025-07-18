@@ -376,7 +376,7 @@ def get_or_create_assistant():
             }
         },
         temperature=0.1,
-        top_p=0.5
+        top_p=0.15
     )
     
     # Save the assistant ID for future use
@@ -1111,7 +1111,7 @@ Return your response as a JSON object that strictly follows the required schema.
             }
         },
         temperature=0.05,
-        top_p=0.3
+        top_p=0.15
     )
     
     # Save the assistant ID
@@ -1199,7 +1199,7 @@ def get_or_create_chinese_assistant():
             }
         },
         temperature=0.05,
-        top_p=0.3
+        top_p=0.15
     )
     
     # Save the assistant ID
