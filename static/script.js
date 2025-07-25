@@ -30,7 +30,7 @@ async function proofreadText() {
     
     // Show loading state
     setLoadingState(true);
-    showLoadingState('Processing your text...', 'Please wait while we analyze your content for style and grammar compliance.');
+    showLoadingState('Processing your text...', '⚠️ Note: The AI may suggest clarity or fluency edits that are not mandated by the CUHK Writing Style Guide. Please review and accept or reject these optional changes as needed.');
     hideResults();
     hideError();
     

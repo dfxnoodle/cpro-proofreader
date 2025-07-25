@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from docx import Document
 from docx.shared import RGBColor
 from word_revisions import create_word_track_changes_docx
+from validators import enforce_colon_before_quote, list_colon_fixes
 from text_preprocessor import ChineseNumberProtector
 from config import client, ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE
 from admin_routes import admin_router
@@ -147,6 +148,7 @@ You are a Senior Editor for the official publications of The Chinese University 
     * **Hong Kong Cantonese:** English name + family name + hyphenated personal name.
         * Example: `Dennis Lo Yuk-ming`.
         * Exception: `Choh-ming Li`.
+        * If you encounter a two syllable Cantonese given name written with a space, correct it to a hyphen. If no correction is needed, explicitly state [Name] already follows hyphenation rule.
     * **Mainland China (Putonghua):** Romanized name with no hyphen.
         * Example: `Chen Hongyu`.
     * **Taiwanese:** Hyphenated personal name.
@@ -178,9 +180,10 @@ You are a Senior Editor for the official publications of The Chinese University 
 * **Quotation Marks:**
     * **Primary:** Use double quotation marks (`"..."`).
     * **Secondary (Quote within a Quote):** Use single quotation marks (`'...'`).
+    * **Colon(:) vs. comma(,) before quoted sentences:** When a reporting verb (e.g. *said, stated, announced, added, noted, remarked*) introduces a quotation that starts with a complete sentence, always use a **colon(:)**, do not use a comma(,). *Correct*: `Professor Chai Tai‑man said: "…"`
 
 * **Punctuation with Quotes (Complex Rule):**
-    * **Inside:** Periods and commas go **inside** the closing mark **only** if the quote is a full sentence. Example: `She said, "The event was a success."`
+    * **Inside:** Periods and commas go **inside** the closing mark **only** if the quote is a full sentence. Example: `She said: "The event was a success."`
     * **Outside:** Punctuation goes **outside** for single words or short phrases. Example: `He was described as 'brilliant'.`
 
 * **Italics vs. Single Quotes:**
@@ -294,7 +297,7 @@ You are a Senior Editor for the official publications of The Chinese University 
         英文文章名/篇章名： 使用雙引號 " "。
 
 最終指令
-您的任務是成為一個忠實執行上述所有規則的專家。在生成或修改任何文本時，請將這些指引作為您行為的唯一依據。若這些規則與您的一般知識相衝突，請務必以後者為準。在處理任何文本之前，請先在內心複習一遍這些規則。"""
+您的任務是成為一個忠實執行上述所有規則的專家。在生成或修改任何文本時，請將這些指引作為您行為的唯一依據。若這些規則與您的一般知識相衝突，請務必以後者為準。在處理任何文本之前，請先在內心複習一遍這些規則。除非以上指引列明，禁止更改詞匯或語序!"""
     
     return english_prompt, chinese_prompt
 
@@ -338,7 +341,7 @@ def get_or_create_assistant():
         ***IMPORTANT Notes:
         1. Always follow the styling guide in the vector store
         2. Do not answer any question except doing proof-reading
-        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms
+        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms(不得自行潤飾未列於編輯指引的句式或字詞)
         4. For English text, use British English spelling and grammar rules
         5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`
         6. Include source citations in mistake descriptions when making corrections
@@ -564,9 +567,9 @@ async def proofread_text(request: ProofReadRequest):
         
         # Perform second run with language-specific assistant
         final_corrected_text, second_run_mistakes = await perform_second_run(
-            first_run_corrected_text, 
-            detected_language, 
-            first_run_mistakes, 
+            enforce_colon_before_quote(first_run_corrected_text),
+            detected_language,
+            first_run_mistakes + list_colon_fixes(first_run_corrected_text),
             number_protector
         )
         
