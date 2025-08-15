@@ -249,11 +249,24 @@ Keep all CHINESE_NUM_* markers exactly as they appear.
             Text with original numbers restored
         """
         restored_text = text
+        restoration_count = 0
+        
+        print(f"DEBUG: Starting restoration with {len(self.protected_patterns)} protected patterns")
         
         for marker, original_text in self.protected_patterns.items():
             if marker in restored_text:
                 restored_text = restored_text.replace(marker, original_text)
+                restoration_count += 1
                 print(f"Restored Chinese number: {marker} -> '{original_text}'")
+            else:
+                print(f"Marker not found in text: {marker} (was: '{original_text}')")
+        
+        print(f"DEBUG: Restoration complete. Restored {restoration_count} markers out of {len(self.protected_patterns)} patterns")
+        
+        # Check for any remaining CHINESE_NUM_ markers that weren't restored
+        remaining_markers = re.findall(r'CHINESE_NUM_[A-F0-9]{6}', restored_text)
+        if remaining_markers:
+            print(f"WARNING: Found {len(remaining_markers)} unrestore markers: {remaining_markers}")
         
         return restored_text
 

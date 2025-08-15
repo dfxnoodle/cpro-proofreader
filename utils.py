@@ -7,6 +7,46 @@ import json
 import re
 from typing import Tuple, List, Dict, Any
 
+def clean_marker_references_from_mistakes(mistakes: List[str], number_protector) -> List[str]:
+    """
+    Clean up Chinese number protection marker references from mistakes array
+    
+    Args:
+        mistakes: List of mistake descriptions
+        number_protector: ChineseNumberProtector instance with protected patterns
+    
+    Returns:
+        Cleaned list of mistakes with marker references removed or replaced
+    """
+    cleaned_mistakes = []
+    
+    for mistake in mistakes:
+        cleaned_mistake = mistake
+        
+        # Replace marker references with actual values
+        for marker, original_value in number_protector.protected_patterns.items():
+            if marker in cleaned_mistake:
+                # Replace marker references in the mistake description
+                cleaned_mistake = cleaned_mistake.replace(f"標記 {marker}", f"原文中的數字 '{original_value}'")
+                cleaned_mistake = cleaned_mistake.replace(f"Marker {marker}", f"Original number '{original_value}'")
+                cleaned_mistake = cleaned_mistake.replace(marker, original_value)
+        
+        # Only include the mistake if it's not just about marker replacement
+        if not ("標記" in mistake and "應替換為" in mistake and any(marker in mistake for marker in number_protector.protected_patterns.keys())):
+            cleaned_mistakes.append(cleaned_mistake)
+        else:
+            # If it's just a marker replacement note, convert it to a meaningful correction
+            if "CHINESE_NUM_" in mistake:
+                # Extract the original and corrected values for a better description
+                for marker, original_value in number_protector.protected_patterns.items():
+                    if marker in mistake:
+                        # Create a more meaningful mistake description
+                        meaningful_mistake = f"數字格式已根據CUHK編輯指引進行調整：原文的數字表達已按照規範修正"
+                        cleaned_mistakes.append(meaningful_mistake)
+                        break
+    
+    return cleaned_mistakes
+
 def parse_assistant_response(response_text: str, default_text: str = "") -> Tuple[str, List[str]]:
     """
     Robustly parse assistant response with multiple fallback strategies
@@ -19,7 +59,7 @@ def parse_assistant_response(response_text: str, default_text: str = "") -> Tupl
         Tuple of (corrected_text, mistakes_list)
     """
     
-    # Strategy 1: Try to parse as pure JSON
+    # Try to parse as pure JSON
     try:
         response_data = json.loads(response_text.strip())
         corrected_text = response_data.get("corrected_text", default_text)
@@ -29,40 +69,8 @@ def parse_assistant_response(response_text: str, default_text: str = "") -> Tupl
     except json.JSONDecodeError:
         print("⚠ Pure JSON parsing failed, trying fallback strategies...")
     
-    # Strategy 2: Try to extract JSON from markdown code blocks
-    try:
-        # Look for JSON in ```json blocks
-        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
-        json_match = re.search(json_pattern, response_text, re.DOTALL | re.IGNORECASE)
-        
-        if json_match:
-            json_content = json_match.group(1)
-            response_data = json.loads(json_content)
-            corrected_text = response_data.get("corrected_text", default_text)
-            mistakes = response_data.get("mistakes", [])
-            print("✓ Successfully extracted JSON from markdown code block")
-            return corrected_text, mistakes
-    except (json.JSONDecodeError, AttributeError):
-        print("⚠ Markdown JSON extraction failed")
-    
-    # Strategy 3: Try to find JSON object in the text (even if embedded)
-    try:
-        # Look for first { and last } to extract potential JSON
-        start_idx = response_text.find('{')
-        end_idx = response_text.rfind('}')
-        
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            json_content = response_text[start_idx:end_idx + 1]
-            response_data = json.loads(json_content)
-            corrected_text = response_data.get("corrected_text", default_text)
-            mistakes = response_data.get("mistakes", [])
-            print("✓ Successfully extracted embedded JSON object")
-            return corrected_text, mistakes
-    except json.JSONDecodeError:
-        print("⚠ Embedded JSON extraction failed")
-    
-    # Strategy 4: Text parsing fallback
-    print("🔄 All JSON strategies failed, using text parsing fallback")
+    # Text parsing fallback
+    print("🔄 JSON parsing failed, using text parsing fallback")
     return parse_text_response(response_text, default_text)
 
 def parse_text_response(response_text: str, default_text: str = "") -> Tuple[str, List[str]]:

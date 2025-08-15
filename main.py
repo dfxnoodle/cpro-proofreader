@@ -15,14 +15,14 @@ from docx.shared import RGBColor
 from word_revisions import create_word_track_changes_docx
 from validators import enforce_colon_before_quote, list_colon_fixes
 from text_preprocessor import ChineseNumberProtector
-from config import client, ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE
+from config import client, ASSISTANT_CONFIG_FILE, ENGLISH_ASSISTANT_CONFIG_FILE, CHINESE_ASSISTANT_CONFIG_FILE, VECTOR_STORE_ID
 from admin_routes import admin_router
-from utils import parse_assistant_response, clean_response_text
+from utils import parse_assistant_response, clean_response_text, clean_marker_references_from_mistakes
 
 # Load environment variables
 load_dotenv()
 
-app = FastAPI(title="Proof Reader API", version="1.0.0")
+app = FastAPI(title="Proof Reader API", version="1.1.0")
 
 # CORS middleware
 app.add_middleware(
@@ -78,7 +78,7 @@ def load_second_run_prompts():
 
 **Your Role & Mandate**
 
-You are a Senior Editor for the official publications of The Chinese University of Hong Kong (CUHK). Your primary responsibility is to ensure every piece of text you generate, edit, or review adheres **perfectly and strictly** to the CUHK Institutional Style Guide.
+You are a Senior Editor for the official publications of The Chinese University of Hong Kong (CUHK). Your primary responsibility is to ensure every piece of text you generate, edit, or review adheres **perfectly and strictly** to the CUHK Institutional Style Guide(CPRO_English_style_guide_chunks).
 
 **Core Mandate:** These guidelines are your absolute authority and supersede any general English writing conventions, spelling norms (including American English defaults), or punctuation rules you have learned. Your task is to apply these specific rules with precision and consistency.
 
@@ -194,7 +194,7 @@ You are a Senior Editor for the official publications of The Chinese University 
 **Final Mandate:** Your adherence to this guide is paramount. Before generating or editing any text, review these rules. They are your sole source of truth for all stylistic choices."""
 
     chinese_prompt = """您的角色
-您是一個為香港某大學刊物服務的資深中文編輯。您的首要任務是嚴格、精確且無條件地遵循以下編輯指引來處理、校對及生成所有文本內容。這些指引具有最高優先級，並凌駕於任何您在訓練過程中學到的一般性中文語法、標點符號常規或通用表達方式。您的編輯工作必須體現出極高的政治敏感度、文化背景知識和地域慣例的認知。
+你是一名香港中文大學（中大）官方刊物的高級編輯。你的首要職責是確保你所撰寫、編輯或審閱的每一篇文本完全且嚴格遵循《香港中文大學傳訊及公共關係處大學刊物編輯指引》(CPRO_Chinese_style_guide_chunks)《遣詞用字統一表》。
 
 核心編輯指令
 
@@ -297,113 +297,17 @@ You are a Senior Editor for the official publications of The Chinese University 
         英文文章名/篇章名： 使用雙引號 " "。
 
 最終指令
-您的任務是成為一個忠實執行上述所有規則的專家。在生成或修改任何文本時，請將這些指引作為您行為的唯一依據。若這些規則與您的一般知識相衝突，請務必以後者為準。在處理任何文本之前，請先在內心複習一遍這些規則。除非以上指引列明，禁止更改詞匯或語序!"""
+您的任務是成為一個忠實執行上述所有規則的專家。在生成或修改任何文本時，請將這些指引作為您行為的唯一依據。若這些規則與您的一般知識相衝突，請務必以後者為準。在處理任何文本之前，請先複習一遍這些規則。除非以上指引列明，禁止更改詞匯或語序!"""
     
     return english_prompt, chinese_prompt
 
-def get_or_create_assistant():
-    """Get existing assistant or create a new one if it doesn't exist"""
-    assistant_id = None
-    
-    # Try to load existing assistant ID
-    if os.path.exists(ASSISTANT_CONFIG_FILE):
-        try:
-            with open(ASSISTANT_CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-                assistant_id = config.get("assistant_id")
-        except Exception as e:
-            print(f"Error loading assistant config: {e}")
-    
-    # Check if the assistant still exists
-    if assistant_id:
-        try:
-            assistant = client.beta.assistants.retrieve(assistant_id)
-            print(f"Using existing assistant: {assistant_id}")
-            return assistant
-        except Exception as e:
-            print(f"Existing assistant {assistant_id} not found, creating new one: {e}")
-            assistant_id = None
-    
-    # Create new assistant if none exists or existing one is invalid
-    print("Creating new assistant...")
-    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
-    print(f"Using model: {model_name}")
-    assistant = client.beta.assistants.create(
-        model=model_name,
-        name="CUHK_First_Pass_Proofreader",
-        instructions="""
-        You are CUHK's official style-guide proof-reader performing the FIRST PASS of proofreading.
-        
-        Your job is to correct basic style, spelling, punctuation, and terminology issues based on the style guides in the vector store (English and Chinese versions). This is the initial pass - focus on clear, obvious errors and improvements.
-        
-        Return your response as a JSON object that strictly follows the required schema.
-        
-        ***IMPORTANT Notes:
-        1. Always follow the styling guide in the vector store
-        2. Do not answer any question except doing proof-reading
-        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms(不得自行潤飾未列於編輯指引的句式或字詞)
-        4. For English text, use British English spelling and grammar rules
-        5. The vector store contains YAML-front-matter chunks with keys `id`, `file`, `section`, `lang`, and `source`
-        6. Include source citations in mistake descriptions when making corrections
-        7. Focus on major errors in this first pass - a second specialized pass will follow
-        8. Citations should be embedded within each mistake description, not in a separate citations array.
-        """,
-        tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "ProofreadingResponse",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "corrected_text": {
-                            "type": "string",
-                            "description": "The corrected version of the text"
-                        },
-                        "mistakes": {
-                            "type": "array",
-                            "description": "List of mistakes found and how they were corrected with style guide references included (with original quotes)",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "required": [
-                        "corrected_text",
-                        "mistakes",
-                    ],
-                    "additionalProperties": False
-                }
-            }
-        },
-        temperature=0.1,
-        top_p=0.15
-    )
-    
-    # Save the assistant ID for future use
-    try:
-        config = {"assistant_id": assistant.id}
-        with open(ASSISTANT_CONFIG_FILE, 'w') as f:
-            json.dump(config, f)
-        print(f"Saved new assistant ID: {assistant.id}")
-    except Exception as e:
-        print(f"Error saving assistant config: {e}")
-    
-    return assistant
+# NOTE: First pass assistant functions removed since first pass now uses direct chat completion
+# These functions were previously used for first pass but are no longer needed in the optimized workflow
 
-# Global variables to store the assistants (lazy initialization)
-assistant = None
+# Global variables to store the language-specific assistants (lazy initialization)
+# Note: Main assistant removed since first pass now uses direct chat completion
 english_assistant = None
 chinese_assistant = None
-
-def get_assistant():
-    """Get the assistant, creating it if it doesn't exist yet (lazy initialization)"""
-    global assistant
-    if assistant is None:
-        assistant = get_or_create_assistant()
-    return assistant
 
 def get_english_assistant():
     """Get the English assistant, creating it if it doesn't exist yet (lazy initialization)"""
@@ -419,7 +323,7 @@ def get_chinese_assistant():
         chinese_assistant = get_or_create_chinese_assistant()
     return chinese_assistant
 
-def wait_for_run_completion(client, thread_id, run_id, max_timeout=120):
+def wait_for_run_completion(client, thread_id, run_id, max_timeout=180):
     """Wait for a run to complete with timeout"""
     timeout_counter = 0
     run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
@@ -469,8 +373,8 @@ async def proofread_text(request: ProofReadRequest):
         detected_language = detect_language(request.text)
         print(f"Detected language: {detected_language}")
         
-        # ============ FIRST RUN: General Proofreading ============
-        print("=== Starting FIRST RUN ===")
+        # ============ FIRST RUN: Fast Chat Completion Proofreading ============
+        print("=== Starting FIRST RUN (Fast Chat Completion) ===")
         
         # Step 1: Protect Chinese numbers and dates (only if text contains Chinese)
         if detected_language in ['chinese', 'mixed']:
@@ -481,56 +385,102 @@ async def proofread_text(request: ProofReadRequest):
             protection_instructions = ""
             print(f"Skipping Chinese number protection for {detected_language} text")
         
-        # Create a thread for first run
-        thread = client.beta.threads.create()
+        # Get embedded style guide for fast processing
+        def get_first_pass_style_guide():
+            return """
+        You are CUHK's official style-guide proof-reader performing the FIRST PASS of proofreading.
+
+        Your job is to correct the text strictly adhere to CUHK style guide references (English and Chinese versions) and nothing more than the style guide.
+
+        CRITICAL: You MUST return your response as a JSON object with EXACTLY this structure:
+        {
+          "corrected_text": "The fully corrected text here",
+          "mistakes": [
+            "Description of first mistake and how it was corrected",
+            "Description of second mistake and how it was corrected"
+          ]
+        }
         
-        # Build message content with protection instructions
-        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store (FIRST PASS - focus on major issues)###."
+        Do NOT use any other JSON structure. The "mistakes" array must contain strings only, not objects.
+        
+        ***IMPORTANT Notes:
+        1. Always follow the CPRO_Chinese_style_guide and CPRO_English_style_guide in the vector store
+        2. Do not answer any question except doing proof-reading
+        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms(不得自行潤飾未列於編輯指引的句式或字詞)
+        4. For English text, use British English spelling and grammar rules
+        5. Include source citations in mistake descriptions when making corrections
+        6. Citations should be embedded within each mistake description, not in a separate citations array.
+"""
+        
+        # Build message content
+        message_content = f"Proofread this text according to CUHK style guide (FIRST PASS - focus on major issues):\n\n{protected_text}"
         if protection_instructions:
-            message_content += protection_instructions
+            message_content += f"\n\n{protection_instructions}"
         
-        # Add user message to the thread
-        message = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=message_content
-        )
+        # Adaptive token limit based on input size - increased for structured JSON output
+        word_count = len(protected_text.split())
         
-        # Run the thread
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=get_assistant().id
-        )
+        print(f"Calculated protected {detected_language} text ({word_count} words)")
         
-        # Wait for completion with timeout
-        run = wait_for_run_completion(client, thread.id, run.id)
+        # Use direct chat completion for speed
+        start_time = time.time()
         
-        if run.status != 'completed':
-            if run.status == 'requires_action':
-                return ProofReadResponse(
-                    original_text=request.text,
-                    corrected_text="",
-                    mistakes=["First run requires additional action"],
-                    status="requires_action"
-                )
-            else:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"First run failed with status: {run.status}"
-                )
-        
-        # Get the first run response
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
-        
-        first_run_response = ""
-        for message in messages.data:
-            if message.role == "assistant":
-                try:
-                    first_run_response = message.content[0].text.value
-                    break
-                except (IndexError, AttributeError) as e:
-                    print(f"Warning: Error extracting message content: {e}")
-                    continue
+        try:
+            response = client.chat.completions.create(
+                model=os.getenv("AZURE_OPENAI_MODEL", "gpt-4.1"),
+                messages=[
+                    {
+                        "role": "system",
+                        "content": get_first_pass_style_guide()
+                    },
+                    {
+                        "role": "user",
+                        "content": message_content
+                    }
+                ],
+                max_tokens=16384,
+                temperature=0.01,  # Low for consistency
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "ProofreadingResponse",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "corrected_text": {
+                                    "type": "string",
+                                    "description": "The corrected version of the text"
+                                },
+                                "mistakes": {
+                                    "type": "array",
+                                    "description": "List of mistakes found and how they were corrected with CUHK style guide references",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "required": [
+                                "corrected_text",
+                                "mistakes"
+                            ],
+                            "additionalProperties": False
+                        }
+                    }
+                }
+            )
+            
+            first_run_duration = time.time() - start_time
+            first_run_response = response.choices[0].message.content
+            print(f"✅ First run completed in {first_run_duration:.2f}s (chat completion)")
+            
+        except Exception as e:
+            first_run_duration = time.time() - start_time
+            print(f"❌ First run failed in {first_run_duration:.2f}s: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"First run chat completion failed: {str(e)}"
+            )
         
         # Validate that we got a response
         if not first_run_response.strip():
@@ -558,6 +508,8 @@ async def proofread_text(request: ProofReadRequest):
         # Restore protected Chinese numbers from first run (only if protection was applied)
         if detected_language in ['chinese', 'mixed']:
             first_run_corrected_text = number_protector.restore_chinese_numbers(first_run_corrected_text)
+            # Clean up any marker references in mistakes array
+            first_run_mistakes = clean_marker_references_from_mistakes(first_run_mistakes, number_protector)
             print(f"Chinese numbers restored for {detected_language} text")
         else:
             print(f"No Chinese number restoration needed for {detected_language} text")
@@ -830,8 +782,8 @@ async def proofread_docx(file: UploadFile = File(...)):
         detected_language = detect_language(extracted_text)
         print(f"DOCX - Detected language: {detected_language}")
         
-        # ============ FIRST RUN: General Proofreading ============
-        print("=== DOCX - Starting FIRST RUN ===")
+        # ============ FIRST RUN: Fast Chat Completion Proofreading (DOCX) ============
+        print("=== DOCX - Starting FIRST RUN (Fast Chat Completion) ===")
         
         # Step 1: Protect Chinese numbers and dates (only if text contains Chinese)
         if detected_language in ['chinese', 'mixed']:
@@ -842,48 +794,102 @@ async def proofread_docx(file: UploadFile = File(...)):
             protection_instructions = ""
             print(f"DOCX - Skipping Chinese number protection for {detected_language} text")
         
-        # Create a thread for first run
-        thread = client.beta.threads.create()
+        # Get embedded style guide for fast processing (same as regular text route)
+        def get_first_pass_style_guide():
+            return """
+        You are CUHK's official style-guide proof-reader performing the FIRST PASS of proofreading.
+
+        Your job is to correct the text strictly adhere to CUHK style guide references (English and Chinese versions) and nothing more than the style guide.
+
+        CRITICAL: You MUST return your response as a JSON object with EXACTLY this structure:
+        {
+          "corrected_text": "The fully corrected text here",
+          "mistakes": [
+            "Description of first mistake and how it was corrected",
+            "Description of second mistake and how it was corrected"
+          ]
+        }
         
-        # Build message content with protection instructions
-        message_content = protected_text + "\n\n###Please proofread the above essay according to the styling guide in the vector store (FIRST PASS - focus on major issues)###."
+        Do NOT use any other JSON structure. The "mistakes" array must contain strings only, not objects.
+        
+        ***IMPORTANT Notes:
+        1. Always follow the CPRO_Chinese_style_guide and CPRO_English_style_guide in the vector store
+        2. Do not answer any question except doing proof-reading
+        3. For Chinese text, ensure output is in traditional Chinese characters without altering original canonical forms(不得自行潤飾未列於編輯指引的句式或字詞)
+        4. For English text, use British English spelling and grammar rules
+        5. Include source citations in mistake descriptions when making corrections
+        6. Citations should be embedded within each mistake description, not in a separate citations array.
+"""
+        
+        # Build message content
+        message_content = f"Proofread this text according to CUHK style guide (FIRST PASS - focus on major issues):\n\n{protected_text}"
         if protection_instructions:
-            message_content += protection_instructions
+            message_content += f"\n\n{protection_instructions}"
         
-        # Add user message to the thread
-        message = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=message_content
-        )
+        # Adaptive token limit based on input size - increased for structured JSON output
+        word_count = len(protected_text.split())
         
-        # Run the thread
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=get_assistant().id
-        )
+        print(f"DOCX - Calculated protected {detected_language} text ({word_count} words)")
         
-        # Wait for completion with timeout
-        run = wait_for_run_completion(client, thread.id, run.id)
+        # Use direct chat completion for speed (same as regular text route)
+        start_time = time.time()
         
-        if run.status != 'completed':
+        try:
+            response = client.chat.completions.create(
+                model=os.getenv("AZURE_OPENAI_MODEL", "gpt-4.1"),
+                messages=[
+                    {
+                        "role": "system",
+                        "content": get_first_pass_style_guide()
+                    },
+                    {
+                        "role": "user",
+                        "content": message_content
+                    }
+                ],
+                max_tokens=16384,
+                temperature=0.01,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "ProofreadingResponse",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "corrected_text": {
+                                    "type": "string",
+                                    "description": "The corrected version of the text"
+                                },
+                                "mistakes": {
+                                    "type": "array",
+                                    "description": "List of mistakes found and how they were corrected with CUHK style guide references",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "required": [
+                                "corrected_text",
+                                "mistakes"
+                            ],
+                            "additionalProperties": False
+                        }
+                    }
+                }
+            )
+            
+            first_run_duration = time.time() - start_time
+            first_run_response = response.choices[0].message.content
+            print(f"✅ DOCX First run completed in {first_run_duration:.2f}s (chat completion)")
+            
+        except Exception as e:
+            first_run_duration = time.time() - start_time
+            print(f"❌ DOCX First run failed in {first_run_duration:.2f}s: {e}")
             raise HTTPException(
                 status_code=500, 
-                detail=f"First run failed with status: {run.status}"
+                detail=f"DOCX First run chat completion failed: {str(e)}"
             )
-        
-        # Get the first run response
-        messages = client.beta.threads.messages.list(thread_id=thread.id)
-        
-        first_run_response = ""
-        for message in messages.data:
-            if message.role == "assistant":
-                try:
-                    first_run_response = message.content[0].text.value
-                    break
-                except (IndexError, AttributeError) as e:
-                    print(f"Warning: Error extracting DOCX message content: {e}")
-                    continue
         
         # Validate that we got a response
         if not first_run_response.strip():
@@ -911,6 +917,8 @@ async def proofread_docx(file: UploadFile = File(...)):
         # Restore protected Chinese numbers from first run (only if protection was applied)
         if detected_language in ['chinese', 'mixed']:
             first_run_corrected_text = number_protector.restore_chinese_numbers(first_run_corrected_text)
+            # Clean up any marker references in mistakes array
+            first_run_mistakes = clean_marker_references_from_mistakes(first_run_mistakes, number_protector)
             print(f"DOCX - Chinese numbers restored for {detected_language} text")
         else:
             print(f"DOCX - No Chinese number restoration needed for {detected_language} text")
@@ -918,11 +926,11 @@ async def proofread_docx(file: UploadFile = File(...)):
         # ============ SECOND RUN: Language-Specific Detailed Proofreading ============
         print("=== DOCX - Starting SECOND RUN ===")
         
-        # Perform second run with language-specific assistant
+        # Perform second run with language-specific assistant (include colon fixes like regular text route)
         final_corrected_text, second_run_mistakes = await perform_second_run(
-            first_run_corrected_text, 
-            detected_language, 
-            first_run_mistakes, 
+            enforce_colon_before_quote(first_run_corrected_text),
+            detected_language,
+            first_run_mistakes + list_colon_fixes(first_run_corrected_text),
             number_protector
         )
         
@@ -1065,7 +1073,7 @@ def get_or_create_english_assistant():
     
     # Create new English assistant
     print("Creating new English assistant...")
-    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
+    model_name = os.getenv("AZURE_OPENAI_MODEL2", "gpt-4.1")
     english_prompt, _ = load_second_run_prompts()
     
     assistant = client.beta.assistants.create(
@@ -1076,6 +1084,17 @@ def get_or_create_english_assistant():
 
 You are performing a comprehensive FINAL proofreading pass. The text has already been through an initial proofreading pass, and you will be given a list of corrections that were already made.
 
+CRITICAL: You MUST return your response as a JSON object with EXACTLY this structure:
+{{
+  "corrected_text": "The fully corrected text here",
+  "mistakes": [
+    "Description of first mistake and how it was corrected",
+    "Description of second mistake and how it was corrected"
+  ]
+}}
+
+Do NOT use any other JSON structure. The "mistakes" array must contain strings only, not objects.
+
 IMPORTANT: Your "mistakes" array should include:
 1. ALL corrections from the first pass (with any refinements or improvements)
 2. ANY additional corrections you identify
@@ -1084,7 +1103,7 @@ IMPORTANT: Your "mistakes" array should include:
 Return your response as a JSON object that strictly follows the required schema. Include ALL corrections (both carried forward and newly identified).
         """,
         tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
         response_format={
             "type": "json_schema",
             "json_schema": {
@@ -1099,7 +1118,7 @@ Return your response as a JSON object that strictly follows the required schema.
                         },
                         "mistakes": {
                             "type": "array",
-                            "description": "List of mistakes found and how they were corrected with specific CUHK style guide references",
+                            "description": "List of mistakes found and how they were corrected with CUHK style guide references",
                             "items": {
                                 "type": "string"
                             }
@@ -1113,8 +1132,8 @@ Return your response as a JSON object that strictly follows the required schema.
                 }
             }
         },
-        temperature=0.05,
-        top_p=0.15
+        temperature=0.01,
+        top_p=0.9
     )
     
     # Save the assistant ID
@@ -1153,7 +1172,7 @@ def get_or_create_chinese_assistant():
     
     # Create new Chinese assistant
     print("Creating new Chinese assistant...")
-    model_name = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
+    model_name = os.getenv("AZURE_OPENAI_MODEL2", "gpt-4.1")
     _, chinese_prompt = load_second_run_prompts()
     
     assistant = client.beta.assistants.create(
@@ -1164,6 +1183,17 @@ def get_or_create_chinese_assistant():
 
 您正在進行全面的最終校對。文本已經經過初步校對，您將獲得已進行的修正清單。
 
+重要：您必須以以下確切結構返回JSON對象：
+{{
+  "corrected_text": "完全修正後的文本",
+  "mistakes": [
+    "第一個錯誤的描述及修正方法",
+    "第二個錯誤的描述及修正方法"
+  ]
+}}
+
+請勿使用任何其他JSON結構。"mistakes"陣列必須只包含字符串，不是對象。
+
 重要：您的「mistakes」陣列應包含：
 1. 第一輪的所有修正（並可進行任何改進或完善）
 2. 您識別出的任何額外修正
@@ -1172,7 +1202,7 @@ def get_or_create_chinese_assistant():
 請以JSON格式返回您的回應，嚴格遵循所需的架構。包含所有修正（既有延續的也有新識別的）。
         """,
         tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": ["vs_GENF8IR41N6uP60Jx9CuLgbs"]}},
+        tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
         response_format={
             "type": "json_schema",
             "json_schema": {
@@ -1183,11 +1213,11 @@ def get_or_create_chinese_assistant():
                     "properties": {
                         "corrected_text": {
                             "type": "string",
-                            "description": "The corrected version of the text"
+                            "description": "已修正的文本"
                         },
                         "mistakes": {
                             "type": "array",
-                            "description": "List of mistakes found and how they were corrected with specific CUHK style guide references",
+                            "description": "根據大學刊物編輯指引（中文）/遣詞用字統一表列出所有已修改的錯誤",
                             "items": {
                                 "type": "string"
                             }
@@ -1201,8 +1231,8 @@ def get_or_create_chinese_assistant():
                 }
             }
         },
-        temperature=0.05,
-        top_p=0.15
+        temperature=0.01,
+        top_p=0.9
     )
     
     # Save the assistant ID
@@ -1332,4 +1362,16 @@ This is the final review. Your "mistakes" array should include ALL corrections (
     
     else:
         print(f"Second run failed with status: {run.status}")
-        return text, [f"Second run failed with status: {run.status}"]
+        # Get more details about the failure
+        try:
+            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if hasattr(run, 'last_error') and run.last_error:
+                error_details = f"Error: {run.last_error.code} - {run.last_error.message}"
+                print(f"Second run error details: {error_details}")
+                return text, [f"Second run failed: {error_details}"]
+            else:
+                print(f"Second run failed with status {run.status} but no error details available")
+                return text, [f"Second run failed with status: {run.status}"]
+        except Exception as e:
+            print(f"Failed to get second run error details: {e}")
+            return text, [f"Second run failed with status: {run.status}"]
