@@ -19,6 +19,23 @@ let selectedFile = null;
 let currentDownloadFilename = null;
 let currentCitations = [];
 
+// Text formatting functions
+function formatTextWithItalics(text) {
+    // Convert *text* and **text** to <em>text</em> (italic)
+    // Handle both single and double asterisks for italics
+    // First handle double asterisks
+    text = text.replace(/\*\*(.*?)\*\*/g, '<em>$1</em>');
+    // Then handle single asterisks (simple pattern for better compatibility)
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return text;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Proofread text function
 async function proofreadText() {
     const text = inputText.value.trim();
@@ -95,10 +112,10 @@ function createIssueListItem(mistakeText) {
     const parsed = parseMistakeText(mistakeText);
     const li = document.createElement('li');
     
-    // Simple display of mistake text
+    // Simple display of mistake text with italic formatting support
     const textDiv = document.createElement('div');
     textDiv.className = 'issue-text';
-    textDiv.textContent = parsed.text;
+    textDiv.innerHTML = formatTextWithItalics(escapeHtml(parsed.text));
     li.appendChild(textDiv);
     
     return li;
@@ -111,8 +128,8 @@ function displayResults(data) {
     document.getElementById('resultsSection').style.display = 'block';
     
     // Populate content
-    document.getElementById('originalText').textContent = data.original_text;
-    document.getElementById('correctedText').textContent = data.corrected_text;
+    document.getElementById('originalText').innerHTML = formatTextWithItalics(escapeHtml(data.original_text));
+    document.getElementById('correctedText').innerHTML = formatTextWithItalics(escapeHtml(data.corrected_text));
     
     // Handle mistakes
     if (data.mistakes && data.mistakes.length > 0) {

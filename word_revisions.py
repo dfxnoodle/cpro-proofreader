@@ -26,6 +26,35 @@ class WordRevisionGenerator:
         self.author = "Proofreader"
         self.date = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
+    def _add_formatted_text_to_paragraph(self, paragraph, text):
+        """
+        Add text to paragraph with support for *italic* formatting.
+        Converts *text* or **text** to italic runs.
+        """
+        # Split text by * or ** markers to find italic sections (both single and double asterisks)
+        parts = re.split(r'\*+([^*]+)\*+', text)
+        
+        for i, part in enumerate(parts):
+            if part:  # Skip empty parts
+                # Restore double asterisks
+                part = part.replace('<<DOUBLE_ASTERISK>>', '**')
+                
+                # Now handle any remaining double asterisk patterns
+                if '**' in part:
+                    # Split by double asterisks for additional italic formatting
+                    double_parts = re.split(r'\*\*(.*?)\*\*', part)
+                    for j, double_part in enumerate(double_parts):
+                        if double_part:
+                            run = paragraph.add_run(double_part)
+                            # Make italic if it's an odd-indexed part from double asterisks OR single asterisks
+                            if j % 2 == 1 or i % 2 == 1:
+                                run.italic = True
+                else:
+                    run = paragraph.add_run(part)
+                    # Every odd-indexed part (1, 3, 5...) from single asterisks should be italic
+                    if i % 2 == 1:
+                        run.italic = True
+    
     def create_document_with_revisions(self, original_text: str, corrected_text: str, mistakes: List[str], citations: List[dict] = None) -> BytesIO:
         """
         Create a DOCX document with track changes showing the differences between original and corrected text.
@@ -72,8 +101,8 @@ class WordRevisionGenerator:
         
         for change_type, text in filtered_changes:
             if change_type == 'equal':
-                # Unchanged text - add normally
-                para.add_run(text)
+                # Unchanged text - add with italic formatting support
+                self._add_formatted_text_to_paragraph(para, text)
             elif change_type == 'delete':
                 # Add deleted text using Word's native deletion tracking
                 self._add_deletion_to_paragraph(para, text)
@@ -89,8 +118,10 @@ class WordRevisionGenerator:
             mistakes_para = doc.add_paragraph()
             mistakes_para.add_run("Corrections Made:").bold = True
             for mistake in mistakes:
-                # Use regular paragraph without numbered style to avoid duplication
-                mistake_para = doc.add_paragraph(f"• {mistake}")
+                # Create paragraph and add formatted mistake text
+                mistake_para = doc.add_paragraph()
+                mistake_para.add_run("• ")  # Add bullet point
+                self._add_formatted_text_to_paragraph(mistake_para, mistake)
         
         # Add citations section
         if citations:
@@ -409,55 +440,79 @@ class WordRevisionGenerator:
     def _add_deletion_to_paragraph(self, paragraph, text):
         """
         Add deleted text to paragraph using Word's native deletion tracking.
+        Supports **italic** formatting.
         
         Args:
             paragraph: The paragraph to add to
             text: The deleted text
         """
-        self.revision_id += 1
+        # Split text by * or ** markers to handle italic formatting (both single and double asterisks)
+        parts = re.split(r'\*+([^*]+)\*+', text)
         
-        # Create deletion XML with red strikethrough (Word's default for deletions)
-        del_xml = f'''
-        <w:del {nsdecls('w')} w:id="{self.revision_id}" w:author="{self.author}" w:date="{self.date}">
-            <w:r>
-                <w:rPr>
-                    <w:color w:val="FF0000"/>
-                    <w:strike w:val="true"/>
-                </w:rPr>
-                <w:delText>{self._escape_xml(text)}</w:delText>
-            </w:r>
-        </w:del>
-        '''
-        
-        # Parse and add to paragraph
-        del_element = parse_xml(del_xml)
-        paragraph._element.append(del_element)
+        for i, part in enumerate(parts):
+            if part:  # Skip empty parts
+                self.revision_id += 1
+                
+                # Determine if this part should be italic
+                is_italic = (i % 2 == 1)
+                
+                # Create deletion XML with red strikethrough and optional italic
+                italic_xml = '<w:i w:val="true"/>' if is_italic else ''
+                
+                del_xml = f'''
+                <w:del {nsdecls('w')} w:id="{self.revision_id}" w:author="{self.author}" w:date="{self.date}">
+                    <w:r>
+                        <w:rPr>
+                            <w:color w:val="FF0000"/>
+                            <w:strike w:val="true"/>
+                            {italic_xml}
+                        </w:rPr>
+                        <w:delText>{self._escape_xml(part)}</w:delText>
+                    </w:r>
+                </w:del>
+                '''
+                
+                # Parse and add to paragraph
+                del_element = parse_xml(del_xml)
+                paragraph._element.append(del_element)
     
     def _add_insertion_to_paragraph(self, paragraph, text):
         """
         Add inserted text to paragraph using Word's native insertion tracking.
+        Supports **italic** formatting.
         
         Args:
             paragraph: The paragraph to add to
             text: The inserted text
         """
-        self.revision_id += 1
+        # Split text by * or ** markers to handle italic formatting (both single and double asterisks)
+        parts = re.split(r'\*+([^*]+)\*+', text)
         
-        # Create insertion XML with green color for better visibility of corrections
-        ins_xml = f'''
-        <w:ins {nsdecls('w')} w:id="{self.revision_id}" w:author="{self.author}" w:date="{self.date}">
-            <w:r>
-                <w:rPr>
-                    <w:color w:val="008000"/>
-                </w:rPr>
-                <w:t xml:space="preserve">{self._escape_xml(text)}</w:t>
-            </w:r>
-        </w:ins>
-        '''
-        
-        # Parse and add to paragraph
-        ins_element = parse_xml(ins_xml)
-        paragraph._element.append(ins_element)
+        for i, part in enumerate(parts):
+            if part:  # Skip empty parts
+                self.revision_id += 1
+                
+                # Determine if this part should be italic
+                is_italic = (i % 2 == 1)
+                
+                # Create insertion XML with green color and optional italic
+                italic_xml = '<w:i w:val="true"/>' if is_italic else ''
+                
+                ins_xml = f'''
+                <w:ins {nsdecls('w')} w:id="{self.revision_id}" w:author="{self.author}" w:date="{self.date}">
+                    <w:r>
+                        <w:rPr>
+                            <w:color w:val="008000"/>
+                            {italic_xml}
+                        </w:rPr>
+                        <w:t xml:space="preserve">{self._escape_xml(part)}</w:t>
+                    </w:r>
+                </w:ins>
+                '''
+                
+                # Parse and add to paragraph
+                ins_element = parse_xml(ins_xml)
+                paragraph._element.append(ins_element)
     
     def _escape_xml(self, text):
         """

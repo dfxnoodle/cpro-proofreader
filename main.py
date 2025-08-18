@@ -672,6 +672,39 @@ def create_tracked_changes_docx(original_text: str, corrected_text: str, mistake
 
 def create_simple_corrections_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
     """Create a simple DOCX file with corrections when track changes fail"""
+    
+    def add_formatted_text_to_paragraph(paragraph, text):
+        """Add text with *italic* and **italic** formatting support"""
+        import re
+        
+        # Handle both single and double asterisk patterns for italics
+        # First replace double asterisks with a temporary marker to avoid conflicts
+        text = text.replace('**', '<<DOUBLE_ASTERISK>>')
+        
+        # Split by single asterisks to find italic sections
+        parts = re.split(r'\*([^*]+)\*', text)
+        
+        for i, part in enumerate(parts):
+            if part:  # Skip empty parts
+                # Restore double asterisks
+                part = part.replace('<<DOUBLE_ASTERISK>>', '**')
+                
+                # Now handle any remaining double asterisk patterns
+                if '**' in part:
+                    # Split by double asterisks for additional italic formatting
+                    double_parts = re.split(r'\*\*(.*?)\*\*', part)
+                    for j, double_part in enumerate(double_parts):
+                        if double_part:
+                            run = paragraph.add_run(double_part)
+                            # Make italic if it's an odd-indexed part from double asterisks OR single asterisks
+                            if j % 2 == 1 or i % 2 == 1:
+                                run.italic = True
+                else:
+                    run = paragraph.add_run(part)
+                    # Every odd-indexed part (1, 3, 5...) from single asterisks should be italic
+                    if i % 2 == 1:
+                        run.italic = True
+    
     try:
         doc = Document()
         
@@ -680,11 +713,13 @@ def create_simple_corrections_docx(original_text: str, corrected_text: str, mist
         
         # Add original text section
         doc.add_heading("Original Text:", level=2)
-        original_para = doc.add_paragraph(original_text)
+        original_para = doc.add_paragraph()
+        add_formatted_text_to_paragraph(original_para, original_text)
         
         # Add corrected text section
         doc.add_heading("Corrected Text:", level=2)
-        corrected_para = doc.add_paragraph(corrected_text)
+        corrected_para = doc.add_paragraph()
+        add_formatted_text_to_paragraph(corrected_para, corrected_text)
         # Highlight corrected text in green
         for run in corrected_para.runs:
             run.font.color.rgb = RGBColor(0, 128, 0)  # Green color
@@ -693,7 +728,9 @@ def create_simple_corrections_docx(original_text: str, corrected_text: str, mist
         if mistakes:
             doc.add_heading("Corrections Made:", level=2)
             for i, mistake in enumerate(mistakes, 1):
-                mistake_para = doc.add_paragraph(f"{i}. {mistake}")
+                mistake_para = doc.add_paragraph()
+                mistake_para.add_run(f"{i}. ")
+                add_formatted_text_to_paragraph(mistake_para, mistake)
         
         # Save to BytesIO
         doc_bytes = BytesIO()
@@ -708,18 +745,55 @@ def create_simple_corrections_docx(original_text: str, corrected_text: str, mist
 
 def create_minimal_docx(original_text: str, corrected_text: str, mistakes: list) -> BytesIO:
     """Create a minimal DOCX file as last resort"""
+    
+    def add_formatted_text_to_paragraph(paragraph, text):
+        """Add text with *italic* and **italic** formatting support"""
+        import re
+        
+        # Handle both single and double asterisk patterns for italics
+        # First replace double asterisks with a temporary marker to avoid conflicts
+        text = text.replace('**', '<<DOUBLE_ASTERISK>>')
+        
+        # Split by single asterisks to find italic sections
+        parts = re.split(r'\*([^*]+)\*', text)
+        
+        for i, part in enumerate(parts):
+            if part:  # Skip empty parts
+                # Restore double asterisks
+                part = part.replace('<<DOUBLE_ASTERISK>>', '**')
+                
+                # Now handle any remaining double asterisk patterns
+                if '**' in part:
+                    # Split by double asterisks for additional italic formatting
+                    double_parts = re.split(r'\*\*(.*?)\*\*', part)
+                    for j, double_part in enumerate(double_parts):
+                        if double_part:
+                            run = paragraph.add_run(double_part)
+                            # Make italic if it's an odd-indexed part from double asterisks OR single asterisks
+                            if j % 2 == 1 or i % 2 == 1:
+                                run.italic = True
+                else:
+                    run = paragraph.add_run(part)
+                    # Every odd-indexed part (1, 3, 5...) from single asterisks should be italic
+                    if i % 2 == 1:
+                        run.italic = True
+    
     try:
         doc = Document()
         doc.add_paragraph("Document Corrections")
         doc.add_paragraph("Original Text:")
-        doc.add_paragraph(original_text)
+        original_para = doc.add_paragraph()
+        add_formatted_text_to_paragraph(original_para, original_text)
         doc.add_paragraph("Corrected Text:")
-        doc.add_paragraph(corrected_text)
+        corrected_para = doc.add_paragraph()
+        add_formatted_text_to_paragraph(corrected_para, corrected_text)
         
         if mistakes:
             doc.add_paragraph("Corrections:")
             for mistake in mistakes:
-                doc.add_paragraph(f"• {mistake}")
+                mistake_para = doc.add_paragraph()
+                mistake_para.add_run("• ")
+                add_formatted_text_to_paragraph(mistake_para, mistake)
         
         doc_bytes = BytesIO()
         doc.save(doc_bytes)
